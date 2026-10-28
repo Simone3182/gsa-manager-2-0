@@ -1,0 +1,9 @@
+{
+  "name": "GSA Manager 2.0 LAB",
+  "short_name": "GSA 2.0 LAB",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f6fa",
+  "theme_color": "#12304a",
+  "icons": []
+}

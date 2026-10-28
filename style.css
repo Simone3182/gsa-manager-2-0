@@ -1,0 +1,146 @@
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:#f3f6fa;color:#162b40}.layout{display:flex;min-height:100vh}aside{width:255px;background:#102b43;color:#dbe7ef;padding:26px 18px;display:flex;flex-direction:column;gap:35px}.brand{display:flex;align-items:center;gap:12px;font-size:18px}.brand span{font-size:30px}.brand small{display:block;font-size:11px;color:#adc4d5}nav{display:grid;gap:8px}button{cursor:pointer;font:inherit}nav button{background:none;border:0;text-align:left;color:#c4d5e3;padding:12px;border-radius:9px}nav button.active,nav button:hover{background:#214b69;color:white}.asidefoot{margin-top:auto;color:#bed0dc;font-size:12px}main{width:100%;min-width:0;padding:30px 4vw}header{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:24px}h1{font-size:29px;margin:0}h2{font-size:20px;margin:0 0 12px}h3{margin:0 0 10px}p{margin:4px 0 10px;color:#607185}.pill{background:#e6f2ee;color:#16684f;padding:7px 11px;border-radius:99px;font-size:12px;white-space:nowrap}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card,.panel{background:white;border:1px solid #e0e7ed;border-radius:13px;padding:20px;box-shadow:0 2px 12px #142c4107}.metric{font-size:30px;font-weight:750;color:#13334e}.muted{color:#697b8d;font-size:13px}.stack{display:grid;gap:15px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0}.primary,.secondary,.danger{border:0;border-radius:8px;padding:10px 14px;background:#176a91;color:white;font-weight:600}.secondary{background:#e8eef3;color:#1c415d}.danger{background:#fff0ed;color:#a43d2c}.field{display:grid;gap:5px}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}input,select,textarea{width:100%;padding:11px;border:1px solid #cbd7df;border-radius:8px;font:inherit;background:white;color:#162b40}textarea{min-height:75px}label{font-weight:600;font-size:13px}.wide{grid-column:1/-1}.list{display:grid;gap:10px}.item{border:1px solid #e2e8ef;border-radius:10px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:white}.item b{display:block}.item small{color:#607185}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{padding:7px 10px}.step{background:#edf4f8;padding:12px;border-radius:8px;font-size:13px}.checks{display:grid;gap:11px}.check{border:1px solid #dce5ec;padding:13px;border-radius:10px;display:grid;gap:8px}.checkhead{display:flex;justify-content:space-between;gap:10px;align-items:center}.checkhead select{max-width:190px}.photo{display:flex;gap:8px;flex-wrap:wrap}.photo img{width:90px;height:75px;object-fit:cover;border-radius:6px}.alert{background:#fff8e9;border:1px solid #f1dba8;padding:12px;border-radius:8px;font-size:13px}.hide{display:none}#toast{position:fixed;bottom:15px;right:15px;background:#12344d;color:white;padding:12px 18px;border-radius:9px;display:none;max-width:350px}.small{font-size:12px}hr{border:0;border-top:1px solid #e5edf2;margin:18px 0}@media(max-width:850px){.layout{display:block}aside{width:100%;padding:12px;gap:10px}.brand{font-size:15px}nav{display:flex;overflow-x:auto;gap:5px}nav button{white-space:nowrap;font-size:12px;padding:9px}.asidefoot{display:none}main{padding:18px}header{align-items:flex-start}h1{font-size:23px}.cards{grid-template-columns:repeat(3,1fr)}.card{padding:12px}.metric{font-size:23px}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start;flex-direction:column}.checkhead{align-items:flex-start;flex-direction:column}.checkhead select{max-width:none}}
+
+/* GSA Manager 1.9.3 — Stampa A4 unificata, classificazione e sopralluogo.
+   Una sola sorgente di stile: nessuna regola ereditata dalle vecchie copertine. */
+.gsa-cover{width:210mm;min-height:297mm;height:297mm;max-width:100%;margin:0 auto;position:relative;display:flex;flex-direction:column;box-sizing:border-box;padding:17mm 17mm 18mm;background:white;color:#0d3153;overflow:hidden}
+.gsa-cover-frame{position:absolute!important;top:10mm;left:10mm;right:10mm;bottom:10mm;border:1px solid #d5a027;pointer-events:none;z-index:0!important}
+.gsa-cover>*{position:relative;z-index:1}
+.gsa-cover-logo{height:45mm;flex:0 0 45mm;display:flex;align-items:center;justify-content:center}
+.gsa-cover-logo img{display:block;width:85mm;max-width:95%;height:auto;max-height:39mm;object-fit:contain;object-position:center}
+.gsa-placeholder{font-size:15pt;font-weight:700;text-align:center}
+.gsa-cover-heading{text-align:center;border-top:1px solid #d5a027;padding:2mm 0 3mm;flex:none}
+.gsa-acronym{font-size:21pt;line-height:1.1;font-weight:800;letter-spacing:1px}
+.gsa-subtitle{font-size:10pt;font-weight:750;letter-spacing:.5px}
+.gsa-cover-band{background:#f6c64b;text-align:center;color:#0d3153;font-size:14pt;font-weight:800;line-height:1.3;padding:4mm 2mm;flex:none}
+.gsa-cover-band small{display:block;font-size:8pt;font-weight:700;letter-spacing:.25px}
+.gsa-cover-photo{min-height:0;flex:1 1 auto;margin:4mm 0 0;border:1px solid #d5a027;background:white;padding:3mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.gsa-cover-photo .gsa-photo-backdrop{display:none}
+.gsa-cover-photo .gsa-photo-main{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;object-position:center}
+.gsa-photo-empty{color:#607185;font-size:11pt}
+.gsa-cover-data{flex:0 0 auto;min-height:42mm;margin:5mm 0 0;padding:3mm 5mm;border:1px solid #d5a027;background:#edf3f7;display:flex;flex-direction:column;justify-content:space-around}
+.gsa-cover-data>div{display:grid;grid-template-columns:10mm 38mm minmax(0,1fr);align-items:center;gap:2mm;min-height:11mm;border-bottom:1px solid #d5dfe7;padding:1.2mm 0}
+.gsa-cover-data>div:last-child{border:0}
+.gsa-cover-data .gsa-icon{width:8mm;height:8mm;display:flex;align-items:center;justify-content:center;color:#123f65}
+.gsa-cover-data svg{width:6.5mm;height:6.5mm;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.gsa-cover-data span{font-size:8pt;font-weight:800}
+.gsa-cover-data b{font-size:10pt;overflow-wrap:anywhere}
+.gsa-cover-footer{display:none}
+.gsa-report-body{max-width:182mm;margin:0 auto;background:#fff;color:#15344e;font-size:11pt;line-height:1.47}
+.gsa-report-body h2{font-size:15pt;line-height:1.25;color:#0b3054;margin:0 0 2mm}
+.gsa-report-body h3{font-size:13pt;line-height:1.3;color:#0b3054;margin:6mm 0 3mm;break-after:avoid;page-break-after:avoid}
+.gsa-report-body h4{font-size:11pt;line-height:1.3;color:#0b3054;margin:4mm 0 2mm;break-after:avoid;page-break-after:avoid}
+.gsa-report-body p{font-size:11pt;line-height:1.48;margin:1.5mm 0 3mm;color:#2b4860;orphans:3;widows:3}
+.gsa-report-body>p:first-of-type{font-size:10pt;color:#607185}
+.gsa-report-body .small,.gsa-report-body .muted{font-size:9pt;color:#657b8e}
+.gsa-title-rule{border:0;border-top:1px solid #d5a027;margin:3mm 0 5mm}
+.gsa-level-table{border-collapse:collapse;width:100%;font-size:10.5pt}
+.gsa-level-table th{background:#edf3f7;border-bottom:1.5px solid #d5a027;color:#0b3054;text-align:left;font-weight:750;padding:2.4mm}
+.gsa-level-table td{border-bottom:1px solid #dce4eb;padding:2.4mm;color:#15344e}
+.gsa-classification{display:grid;grid-template-columns:1.05fr .95fr;gap:4mm;align-items:center;margin:3mm 0}
+.gsa-height-diagram{margin:0;text-align:center}
+.gsa-height-diagram img{max-width:100%;max-height:55mm;object-fit:contain}
+.gsa-height-diagram figcaption{font-size:9pt;color:#607185}
+.gsa-info-card{border:1px solid #d5a027;background:white;break-inside:avoid;page-break-inside:avoid}
+.gsa-info-card-head{background:#edf3f7;border-bottom:1px solid #d9e3ea;padding:2mm 3mm;font-size:9pt;font-weight:800;color:#0b3054}
+.gsa-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 5mm;margin:0;padding:1mm 3mm}
+.gsa-info-grid>div{border-bottom:1px solid #e1e7ed;padding:2mm 0;min-width:0;break-inside:avoid}
+.gsa-info-grid dt{font-size:9.5pt;color:#607185;font-weight:650}
+.gsa-info-grid dd{font-size:11pt;font-weight:650;color:#15344e;margin:0;overflow-wrap:anywhere}
+.report-tech{padding:3mm 0;border-bottom:1px solid #dce4eb;break-inside:avoid;page-break-inside:avoid}
+.report-tech>b{color:#0b3054}
+.report-photos{display:flex;flex-wrap:wrap;gap:3mm;margin-top:2mm}
+.report-photos figure{width:45%;margin:0;break-inside:avoid}
+.report-photos img{max-width:100%;height:40mm;object-fit:contain}
+.report-photos figcaption{font-size:9pt;color:#607185;overflow-wrap:anywhere}
+.gsa-report-body table{max-width:100%;border-collapse:collapse}
+.gsa-report-body tr,.gsa-report-body figure{break-inside:avoid;page-break-inside:avoid}
+.logo-label{display:flex;align-items:center;gap:8px;font-size:12px}
+.logo-label select{width:auto;max-width:250px}
+@media print{
+ /* Margini reali applicati dal motore di stampa a ogni pagina.
+    La prima pagina (copertina) e a pieno foglio. */
+ @page{size:A4 portrait;margin:20mm 14mm 20mm 14mm}
+ @page:first{size:A4 portrait;margin:0}
+ html,body{background:white!important;margin:0!important;padding:0!important}
+ *,*::before,*::after{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+ aside,header,.toolbar,.no-print,#toast{display:none!important}
+ .layout,main,#content,#report{display:block!important;width:auto!important;max-width:none!important;margin:0!important;padding:0!important;min-height:0!important}
+ .panel,#report{border:0!important;box-shadow:none!important;border-radius:0!important;background:white!important}
+ .gsa-cover{width:210mm!important;max-width:none!important;height:297mm!important;min-height:297mm!important;padding:17mm 17mm 18mm!important;margin:0!important;break-after:page!important;page-break-after:always!important;overflow:hidden!important}
+ .gsa-report-body{width:auto!important;max-width:none!important;margin:0!important;padding:0!important;break-before:auto!important;page-break-before:auto!important}
+ .gsa-report-body h2{font-size:15pt!important}
+ .gsa-report-body h3{font-size:13pt!important}
+ .gsa-report-body p{font-size:11pt!important}
+ .gsa-report-body .gsa-level-table,.gsa-report-body .gsa-info-card,.gsa-report-body .gsa-classification{break-inside:avoid!important;page-break-inside:avoid!important}
+ .gsa-report-body .report-tech,.gsa-report-body .report-photos figure{break-inside:avoid!important;page-break-inside:avoid!important}
+}
+
+/* GSA Manager 1.9.5 — pagine A4 costruite prima della stampa.
+   Copertina invariata; pagine successive: cornice nera 0,3 mm a 10 mm,
+   contenuto entro 20 mm da ogni bordo. */
+#gsa-print-root{position:absolute;left:-30000px;top:0;width:210mm;visibility:hidden;pointer-events:none}
+.gsa-print-sheet{width:210mm;height:297mm;position:relative;background:#fff;box-sizing:border-box;overflow:hidden;break-after:page;page-break-after:always}
+.gsa-print-cover-area{width:210mm;height:297mm}
+.gsa-print-cover-area .gsa-cover{width:210mm!important;height:297mm!important;min-height:297mm!important;max-width:none!important;margin:0!important;break-after:auto!important;page-break-after:auto!important}
+.gsa-print-inner-frame{position:absolute;top:10mm;right:10mm;bottom:10mm;left:10mm;border:.3mm solid #222;pointer-events:none}
+.gsa-print-sheet-area{position:absolute;top:20mm;right:20mm;bottom:20mm;left:20mm;width:170mm;height:257mm;max-width:none!important;margin:0!important;padding:0!important;overflow:hidden}
+.gsa-print-sheet-area .report-tech{break-inside:avoid}
+@media print{
+ @page{size:A4 portrait;margin:0!important}
+ @page:first{size:A4 portrait;margin:0!important}
+ html,body{width:210mm!important;margin:0!important;padding:0!important;background:white!important}
+ body > :not(#gsa-print-root){display:none!important}
+ #gsa-print-root{display:block!important;position:static!important;left:auto!important;top:auto!important;width:210mm!important;visibility:visible!important;pointer-events:auto!important}
+ .gsa-print-sheet{width:210mm!important;height:297mm!important;margin:0!important;padding:0!important;overflow:hidden!important;break-after:page!important;page-break-after:always!important}
+ .gsa-print-sheet:last-child{break-after:auto!important;page-break-after:auto!important}
+ .gsa-print-cover-area .gsa-cover{break-after:auto!important;page-break-after:auto!important}
+ .gsa-print-sheet-area{width:170mm!important;height:257mm!important;top:20mm!important;left:20mm!important;right:20mm!important;bottom:20mm!important;margin:0!important;padding:0!important;overflow:hidden!important}
+ *,*::before,*::after{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+}
+
+/* GSA Manager 1.9.7 — foto per voce e piè di pagina nelle sole pagine interne. */
+.check-photo-editor{display:grid;gap:7px;margin-top:7px;padding:11px;background:#f6f9fb;border:1px solid #dce6ed;border-radius:8px}
+.check-photo-editor>small{font-size:12px;color:#61788a}
+.check-photo-list{display:flex;flex-wrap:wrap;gap:9px}
+.check-photo-thumb{width:120px;display:grid;gap:3px;align-content:start}
+.check-photo-thumb img{width:115px;height:85px;object-fit:cover;border-radius:5px}
+.check-photo-thumb small{font-size:11px;overflow-wrap:anywhere}
+.check-photo-thumb button{padding:4px 8px;font-size:12px}
+.gsa-check-evidence{border:1px solid #dce5ed;margin:2mm 0 3mm;background:white;break-inside:avoid;page-break-inside:avoid}
+.gsa-check-evidence-head{font-size:10.5pt;font-weight:750;color:#0b3054;background:#edf3f7;padding:2mm 3mm}
+.gsa-check-detail{font-size:10pt;color:#2b4860;padding:1.5mm 3mm;border-top:1px solid #e3eaf0;overflow-wrap:anywhere}
+.gsa-criticita{color:#9a302b}
+.gsa-check-photo-label{font-size:9pt;font-weight:700;color:#456178;padding:2mm 3mm 1mm;border-top:1px solid #e3eaf0}
+.gsa-check-photo-row{display:flex;gap:3mm;padding:1mm 3mm 2mm;break-inside:avoid;page-break-inside:avoid}
+.gsa-check-photo-row figure{flex:1 1 0;min-width:0;margin:0;text-align:center}
+.gsa-check-photo-row img{display:block;width:100%;height:33mm;object-fit:contain}
+.gsa-check-photo-row figcaption{font-size:8pt;color:#607185;overflow-wrap:anywhere;text-align:left}
+.gsa-print-page-footer{position:absolute;left:20mm;right:20mm;bottom:12.5mm;min-height:5mm;display:flex;align-items:end;justify-content:space-between;gap:5mm;border-top:0.2mm solid #c9d3dc;padding-top:1mm;font-size:8pt;color:#315270}
+.gsa-print-page-footer span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gsa-print-page-footer strong{white-space:nowrap;color:#0b3054}
+.gsa-print-sheet-area{bottom:23mm;height:254mm}
+@media print{.gsa-print-sheet-area{bottom:23mm!important;height:254mm!important}}
+
+/* 1.9.8 — stato dei backup (solo interfaccia, non cambia la stampa) */
+.backup-indicator{border-radius:9px;padding:10px 12px;font-size:12px;color:#d2eadc;background:#1d4c48}.backup-warning{background:#67481c;color:#fff0d0}.backup-status{border:1px solid #b9ddcb;background:#eef9f2;border-radius:9px;padding:13px;display:grid;gap:5px}.backup-status-warning{border-color:#ebd097;background:#fff8e9}.backup-file-label{display:inline-block;background:#e8eef3;color:#1c415d;border-radius:8px;padding:10px 14px;cursor:pointer;font-weight:600}.backup-file-label:hover{background:#dce7ef}
+
+/* Privacy 1.9.9 */
+.privacy-overlay{position:fixed;inset:0;background:#0d253c;z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px}.privacy-card{background:#fff;border-radius:16px;padding:30px;max-width:440px;width:100%;box-shadow:0 20px 60px #0005;text-align:center}.privacy-card h1{color:#12304a}.privacy-card button{margin:12px auto}.privacy-card .muted{font-size:12px}
+
+/* 1.9.9.1 — Avviso di riservatezza, visibile solo nella schermata di anteprima. */
+.gsa-pdf-warning{margin:0 0 14px}
+
+/* 1.9.9.3: mostra le verifiche manutentive solo quando l’impianto è presente */
+.tech-presence-dependent[hidden]{display:none!important}
+.tech-presence-dependent{grid-column:1/-1}
+.tech-presence-hint{grid-column:1/-1;color:#637184}
+
+/* 1.9.9.4 — Firma del tecnico, separata dal testo e ancorata in basso a destra
+   nella sola ultima pagina interna durante la paginazione di stampa. */
+.gsa-signature-block{width:76mm;min-height:38mm;margin:10mm 0 2mm auto;text-align:center;color:#15344e;break-inside:avoid;page-break-inside:avoid;font-size:10pt;line-height:1.35}
+.gsa-signature-title{font-weight:750;font-size:10pt}
+.gsa-signature-name{font-weight:600;margin-top:2mm}
+.gsa-signature-space{height:15mm}
+.gsa-signature-line{border-bottom:1px solid #334c60;margin:0 3mm}
+.gsa-signature-caption{font-size:8.5pt;color:#657b8e;margin-top:1mm}
+.gsa-print-sheet-area>.gsa-signature-block{position:absolute;right:0;bottom:7mm;margin:0;height:38mm;min-height:38mm}

@@ -1,0 +1,18 @@
+GSA MANAGER 2.0 LAB — BASE DI SVILUPPO ISOLATA
+
+Questa e una COPIA DI PROVA della versione 1.9.9.4, NON la sincronizzazione Google Drive.
+
+MODIFICHE:
+- Database IndexedDB separato: gsa-manager-v2-lab.
+- Cache service worker separata: gsa-manager-v2-lab-1.
+- Banner di avviso per evitare l inserimento di dati reali.
+- File HTML, CSS, JS, stampa e risorse mantenuti dalla base 1.9.9.4.
+
+NON COPIARE i file nella cartella della versione originale usata con Edge.
+NON IMPORTARE backup reali nel laboratorio.
+NON PUBBLICARE dati personali o file backup su GitHub.
+Il codice su GitHub Pages pubblico e accessibile a chiunque; il codice non contiene credenziali OAuth.
+L'autenticazione Google e la sincronizzazione con Drive NON sono implementate in questo pacchetto.
+Prima dell uso professionale sono indispensabili test di sicurezza, integrita, conflitti e stampa.
+
+PASSO SUCCESSIVO: caricare questi file SOLO nel repository di prova gsa-manager-2-0 e verificare il caricamento.
