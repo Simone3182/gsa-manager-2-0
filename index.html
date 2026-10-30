@@ -1,7 +1,13 @@
 <!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#12304a"><title>GSA Manager 2.0 LAB</title>
-<link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./style.css?v=2.0-lab-1"></head>
+<link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./style.css?v=2.0-lab-1"><style id="gsa-lab-mobile-layout-fix">
+/* LAB iPhone fix: the existing app.js forces inline display:flex after unlocking.
+   Override it only on narrow screens; leave desktop behavior untouched. */
+@media screen and (max-width:850px){
+  .layout[style*="display: flex"]{display:block!important}
+}
+</style></head>
 <body><div id="privacy-lock" class="privacy-overlay" style="display:none"><div class="privacy-card"><h1>🔐 GSA Manager</h1><p class="privacy-message">Archivio bloccato per proteggere i dati.</p><button id="privacy-unlock" class="primary">Sblocca archivio</button><p class="muted">La password non viene salvata nel browser.</p></div></div><div class="layout"><aside><div class="brand"><span>🛡</span><div><b>GSA Manager</b><small>Studio Geom. Simone Montanari</small></div></div>
 <nav><button data-page="dashboard" class="active">⌂ Dashboard</button><button data-page="condomini">▦ Condomini</button><button data-page="sopralluoghi">☷ Sopralluoghi</button><button data-page="archivio">▤ Verbali</button><button data-page="backup">⇄ Backup e trasferimento</button></nav><div id="backup-indicator" class="backup-indicator" aria-live="polite">Verifica stato backup…</div>
 <div class="asidefoot">LP0 · Bozze e documentazione informativa<br><small>Ambiente di prova isolato · 2.0 LAB</small></div></aside>
