@@ -24,8 +24,14 @@
     <input id="drive-lab-file" type="file" accept=".json,application/json" style="display:block;margin:8px 0" />
     <button type="button" id="drive-lab-upload">2. Carica una nuova copia cifrata su Drive</button>
     <button type="button" id="drive-lab-list">Aggiorna elenco backup Drive</button>
+    <div style="margin-top:12px;padding:12px;border:1px solid #9dc6ea;border-radius:8px;background:#fff">
+      <b>FASE 2A — Controllo sincronizzazione (sola lettura)</b>
+      <p style="margin:8px 0">Confronta l’archivio locale con il backup LAB più recente su Drive. Chiede la password del backup. Non importa, non carica e non modifica dati.</p>
+      <button type="button" id="drive-lab-compare">Controlla sincronizzazione</button>
+      <pre id="drive-lab-compare-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin-top:10px"></pre>
+    </div>
     <div id="drive-lab-files" aria-live="polite" style="margin-top:12px"></div>
   </div>
   <small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
 </section><div id="content"></div></main></div><div id="toast" role="status"></div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-3"></script></body></html>
+<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-4"></script></body></html>

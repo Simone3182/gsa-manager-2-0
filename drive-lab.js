@@ -16,6 +16,8 @@
   const fileInput = $('drive-lab-file');
   const upload = $('drive-lab-upload');
   const refresh = $('drive-lab-list');
+  const compareButton = $('drive-lab-compare');
+  const compareResult = $('drive-lab-compare-result');
   const filesEl = $('drive-lab-files');
   let tokenClient = null;
   let accessToken = null;
@@ -32,6 +34,7 @@
     transfer.hidden = !connected;
     upload.disabled = !connected || busy;
     refresh.disabled = !connected || busy;
+    compareButton.disabled = !connected || busy;
     fileInput.disabled = !connected || busy;
   };
   function disconnectNow() {
@@ -42,6 +45,7 @@
     }
     fileInput.value = '';
     filesEl.replaceChildren();
+    compareResult.textContent = '';
     setControls();
   }
   function assertReady() {
@@ -141,6 +145,85 @@
       const note=document.createElement('div'); note.textContent='Sono mostrati solo i primi 100 backup. Non creare archivi di prova inutili.'; filesEl.append(note);
     }
   }
+  // FASE 2A: confronto in sola lettura. Non chiama alcuna API Drive di scrittura,
+  // né importAtomic, put, metaSet o altri metodi di modifica dell'archivio.
+  function stableValue(value) {
+    if (Array.isArray(value)) return value.map(stableValue);
+    if (value && typeof value === 'object') {
+      const sorted = {};
+      for (const k of Object.keys(value).sort()) sorted[k] = stableValue(value[k]);
+      return sorted;
+    }
+    return value;
+  }
+  function compareRecords(local, remote) {
+    const result = {same:0, different:0, onlyLocal:0, onlyDrive:0};
+    for (const name of ['condomini','visite','classificazioni']) {
+      const l = new Map(local[name].map(r => [r.id, r]));
+      const d = new Map(remote[name].map(r => [r.id, r]));
+      for (const [id, record] of l) {
+        if (!d.has(id)) result.onlyLocal++;
+        else if (JSON.stringify(stableValue(record)) === JSON.stringify(stableValue(d.get(id)))) result.same++;
+        else result.different++;
+      }
+      for (const id of d.keys()) if (!l.has(id)) result.onlyDrive++;
+    }
+    return result;
+  }
+  async function checkSyncReadOnly() {
+    assertReady();
+    compareResult.textContent = 'Controllo in corso: nessun dato verrà modificato…';
+    const params = new URLSearchParams({
+      q: "trashed = false and name contains '" + PREFIX + "'",
+      fields: 'nextPageToken,files(id,name,size,createdTime)',
+      page_size: '100', orderBy: 'createdTime desc'
+    });
+    const response = await api('https://www.googleapis.com/drive/v3/files?' + params);
+    const list = await response.json();
+    const candidates = (list.files || []).filter(f => safeFilename(f.name));
+    if (!candidates.length) throw Error('Nessun backup LAB su Drive da confrontare.');
+    if (list.nextPageToken) throw Error('Oltre 100 backup presenti: confronto automatico sospeso per evitare di scegliere la copia sbagliata.');
+    // La copia più recente è solo un riferimento per il test, NON la fonte di verità.
+    const selected = candidates[0];
+    if (Number(selected.size) > MAX_BYTES) throw Error('Backup remoto oltre 20 MB: controllo sospeso.');
+    if (!confirm('CONTROLLO SINCRONIZZAZIONE — SOLA LETTURA\n\nConfrontare l’archivio locale con il backup Drive più recente?\n' + selected.name + '\n\nSarà richiesta la password del BACKUP.\nNessun dato sarà modificato.')) {
+      compareResult.textContent = 'Controllo annullato. Nessun dato modificato.';
+      return;
+    }
+    const file = await api('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(selected.id) + '?alt=media');
+    const rawText = await file.text();
+    if (new Blob([rawText]).size > MAX_BYTES) throw Error('Backup remoto oltre 20 MB: controllo sospeso.');
+    let encrypted;
+    try { encrypted = JSON.parse(rawText); } catch (_) { throw Error('Backup Drive non è JSON valido.'); }
+    if (encrypted?.format !== 'gsa-manager-encrypted-v1') throw Error('Backup remoto non cifrato: confronto bloccato.');
+    // decodeBackup chiede la password ed esegue AES-GCM localmente nel browser.
+    const remote = await decodeBackup(encrypted);
+    validateBackup(remote);
+    const local = await collectBackup();
+    validateBackup(local);
+    assertReady();
+    const r = compareRecords(local, remote);
+    const total = r.same + r.different + r.onlyLocal + r.onlyDrive;
+    const report = [
+      'CONTROLLO COMPLETATO — NESSUN DATO MODIFICATO',
+      'Backup Drive confrontato: ' + selected.name,
+      'Record uguali: ' + r.same,
+      'Record presenti in entrambi ma differenti: ' + r.different,
+      'Record presenti solo su questo dispositivo: ' + r.onlyLocal,
+      'Record presenti solo nel backup Drive: ' + r.onlyDrive,
+      'Totale voci esaminate: ' + total,
+      r.different + r.onlyLocal + r.onlyDrive === 0
+        ? 'ESITO: archivi equivalenti per i record confrontati.'
+        : 'ESITO: differenze rilevate. Nessuna fusione o sovrascrittura eseguita.',
+      'NOTA: questo è il confronto con un singolo backup, non una sincronizzazione. Le eliminazioni e i conflitti storici non sono ancora gestiti.'
+    ].join('\n');
+    compareResult.textContent = report;
+    setStatus('Confronto in sola lettura completato. Nessun dato modificato.');
+  }
+  compareButton.addEventListener('click', () => runJob(async () => {
+    try { await checkSyncReadOnly(); }
+    catch (err) { compareResult.textContent = 'Controllo non completato: ' + err.message + '\nNessun dato modificato.'; throw err; }
+  }));
   connect.addEventListener('click', () => {
     if (!isVaultUnlocked()) { setStatus('Sblocca prima l’archivio LAB.'); return; }
     if (initGoogle()) { setStatus('Attendo autorizzazione Google…'); tokenClient.requestAccessToken({prompt:'consent'}); }
