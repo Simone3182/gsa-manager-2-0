@@ -1,67 +1,106 @@
-<!doctype html>
-<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#12304a"><title>GSA Manager 2.0 LAB</title>
-<link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./style.css?v=2.0-lab-1"><style id="gsa-lab-mobile-layout-fix">
+<!DOCTYPE html>
+
+<html lang="it"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<meta content="noindex,nofollow" name="robots"/><meta content="#12304a" name="theme-color"/><title>GSA Manager 2.0 LAB</title>
+<link href="./manifest.webmanifest" rel="manifest"/><link href="./style.css?v=2.0-lab-1" rel="stylesheet"/><style id="gsa-lab-mobile-layout-fix">
 /* LAB iPhone fix: the existing app.js forces inline display:flex after unlocking.
    Override it only on narrow screens; leave desktop behavior untouched. */
 @media screen and (max-width:850px){
   .layout[style*="display: flex"]{display:block!important}
 }
+</style><style id="gsa-dashboard-accordion-style">
+/* GSA Manager 2.0 LAB — Accordion solo UI; non tocca gli archivi. */
+#drive-lab-transfer .gsa-fold-hint {margin:14px 0 8px; font-size:.92rem; color:#26435b;}
+#drive-lab-transfer .gsa-phase-fold {margin-top:9px; border:1px solid #aabfd0; border-radius:9px; background:#fff; overflow:hidden;}
+#drive-lab-transfer .gsa-phase-fold > summary {position:relative; display:block; padding:12px 42px 12px 14px; cursor:pointer; font-weight:700; color:#173750; background:#f4f8fc; list-style:none; user-select:none;}
+#drive-lab-transfer .gsa-phase-fold > summary::-webkit-details-marker {display:none;}
+#drive-lab-transfer .gsa-phase-fold > summary::marker {content:'';}
+#drive-lab-transfer .gsa-phase-fold > summary::after {content:'▾'; position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:1.2rem; transition:transform .16s ease;}
+#drive-lab-transfer .gsa-phase-fold[open] > summary::after {transform:translateY(-50%) rotate(180deg);}
+#drive-lab-transfer .gsa-phase-fold > summary:hover {background:#eaf2f9;}
+#drive-lab-transfer .gsa-phase-fold > summary:focus-visible {outline:3px solid #2563eb; outline-offset:-3px;}
+#drive-lab-transfer .gsa-phase-fold > :not(summary) {margin:0 !important; border:0 !important; border-top:1px solid #d7e1eb !important; border-radius:0 !important; padding:12px !important;}
+#drive-lab-transfer .gsa-phase-fold[data-phase-key="2b"] {border-color:#8eb9aa;}
+#drive-lab-transfer .gsa-phase-fold[data-phase-key="2c3"] {border-color:#d5ad6e;}
+@media (prefers-reduced-motion:reduce) {#drive-lab-transfer .gsa-phase-fold > summary::after {transition:none;}}
 </style></head>
-<body><div id="privacy-lock" class="privacy-overlay" style="display:none"><div class="privacy-card"><h1>🔐 GSA Manager</h1><p class="privacy-message">Archivio bloccato per proteggere i dati.</p><button id="privacy-unlock" class="primary">Sblocca archivio</button><p class="muted">La password non viene salvata nel browser.</p></div></div><div class="layout"><aside><div class="brand"><span>🛡</span><div><b>GSA Manager</b><small>Studio Geom. Simone Montanari</small></div></div>
-<nav><button data-page="dashboard" class="active">⌂ Dashboard</button><button data-page="condomini">▦ Condomini</button><button data-page="sopralluoghi">☷ Sopralluoghi</button><button data-page="archivio">▤ Verbali</button><button data-page="backup">⇄ Backup e trasferimento</button></nav><div id="backup-indicator" class="backup-indicator" aria-live="polite">Verifica stato backup…</div>
-<div class="asidefoot">LP0 · Bozze e documentazione informativa<br><small>Ambiente di prova isolato · 2.0 LAB</small></div></aside>
-<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2C.3: analisi storica dei conflitti · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill">● Offline-ready</span></header>
-<section id="drive-lab-panel" aria-label="Backup cifrati su Google Drive" style="background:#eaf4ff;border:1px solid #9dc6ea;border-radius:9px;padding:13px 16px;margin-bottom:12px">
-  <div style="font-weight:700;color:#12304a">Google Drive — backup cifrati (LAB)</div>
-  <p id="drive-lab-status" role="status" style="margin:8px 0;color:#12304a">Non collegato. Nessun dato trasferito.</p>
-  <div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap">
-    <button type="button" id="drive-lab-connect" class="primary">Collega Google Drive (TEST)</button>
-    <button type="button" id="drive-lab-disconnect" disabled>Disconnetti</button>
-  </div>
-  <div id="drive-lab-transfer" hidden style="margin-top:12px;border-top:1px solid #9dc6ea;padding-top:12px">
-    <label for="drive-lab-file"><b>1. Scegli un backup JSON cifrato già scaricato e verificato:</b></label>
-    <input id="drive-lab-file" type="file" accept=".json,application/json" style="display:block;margin:8px 0" />
-    <button type="button" id="drive-lab-upload">2. Carica una nuova copia cifrata su Drive</button>
-    <button type="button" id="drive-lab-list">Aggiorna elenco backup Drive</button>
-    <section id="drive-lab-auto" style="margin-top:12px;padding:12px;border:2px solid #8ba6d5;border-radius:8px;background:#f8faff" aria-label="Controllo automatico della sincronizzazione">
-      <b>FASE 2C.1 — Controllo automatico (sola lettura)</b>
-      <p style="margin:8px 0">Dopo il collegamento a Drive, quando torni alla scheda e periodicamente, il LAB controlla automaticamente se il backup remoto o l'archivio locale sono cambiati rispetto all'ultimo allineamento. Non chiede password, non legge i contenuti cifrati e non trasferisce né modifica dati.</p>
-      <pre id="drive-lab-auto-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:8px 0">In attesa del collegamento a Google Drive.</pre>
-    </section>
-    <section id="drive-lab-conflict" style="margin-top:12px;padding:12px;border:2px solid #d5ad6e;border-radius:8px;background:#fffaf2" aria-label="Analisi storica dei conflitti">
-      <b>FASE 2C.3 — Conflitti intelligenti (sola lettura)</b>
-      <p style="margin:8px 0">Confronto a tre vie: stato del PC, backup cifrato della base storica e ultimo backup Drive. Riconosce modifiche su campi distinti, modifiche allo stesso campo, nuovi record ed eliminazioni. Richiede la password del backup (anche due volte). Non esegue alcuna fusione o trasferimento.</p>
-      <button type="button" id="drive-lab-conflict-analyze">Analizza conflitti rispetto alla base</button>
-      <pre id="drive-lab-conflict-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">In attesa dell’analisi.</pre>
-    </section>
-    <section id="drive-lab-field-diff" style="margin-top:12px;padding:12px;border:2px solid #b6a4d8;border-radius:8px;background:#fbf9ff" aria-label="Analisi differenze per campo">
-      <b>FASE 2C.2 — Differenze per campo (sola lettura)</b>
-      <p style="margin:8px 0">Confronta i singoli campi dell'archivio locale con l'ultimo backup cifrato su Drive. Richiede la password per leggere il backup, ma non modifica né trasferisce dati. Senza una copia storica dei singoli campi, segnala solo potenziali conflitti, non fusioni automatiche.</p>
-      <button type="button" id="drive-lab-field-compare">Analizza differenze per campo</button>
-      <pre id="drive-lab-field-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">In attesa del confronto.</pre>
-    </section>
-    <div style="margin-top:12px;padding:12px;border:1px solid #9dc6ea;border-radius:8px;background:#fff">
-      <b>FASE 2A — Controllo sincronizzazione (sola lettura)</b>
-      <p style="margin:8px 0">Confronta l’archivio locale con il backup LAB più recente su Drive. Chiede la password del backup. Non importa, non carica e non modifica dati.</p>
-      <button type="button" id="drive-lab-compare">Controlla sincronizzazione</button>
-      <pre id="drive-lab-compare-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin-top:10px"></pre>
-    </div>
-    <section id="drive-lab-sync" style="margin-top:12px;padding:12px;border:2px solid #91b8ac;border-radius:8px;background:#f0faf6" aria-label="Sincronizzazione manuale protetta">
-      <b>FASE 2B — Sincronizzazione manuale protetta (solo LAB)</b>
-      <p style="margin:8px 0">Procedura a senso unico per volta. Prima controlla che gli archivi siano allineati, poi pubblica le modifiche oppure ricevi quelle dell’altro PC. Se ci sono conflitti o eliminazioni, il programma blocca l’operazione. La funzione 4 è un recupero guidato SOLO per un conflitto di note già risolto manualmente: richiede il backup cifrato locale esatto e non modifica altri campi.</p>
-      <div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" id="drive-lab-sync-init">1. Allinea punto di partenza</button>
-        <button type="button" id="drive-lab-sync-pull">2. Ricevi da Drive</button>
-        <button type="button" id="drive-lab-sync-push">3. Pubblica su Drive</button>
-        <button type="button" id="drive-lab-sync-resolve" title="Solo dopo la verifica e l’unione manuale delle note">4. Pubblica note riconciliate (LAB)</button>
-        <input id="drive-lab-resolve-file" type="file" accept=".json,application/json" hidden>
-      </div>
-      <pre id="drive-lab-sync-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0"></pre>
-      <small>Non usare su due dispositivi contemporaneamente. Eliminazioni non sincronizzate: vengono bloccate. I backup Drive restano copie separate. Non sostituisce un sistema di sincronizzazione multiutente.</small>
-    </section>
-    <div id="drive-lab-files" aria-live="polite" style="margin-top:12px"></div>
-  </div>
-  <small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
+<body><div class="privacy-overlay" id="privacy-lock" style="display:none"><div class="privacy-card"><h1>🔐 GSA Manager</h1><p class="privacy-message">Archivio bloccato per proteggere i dati.</p><button class="primary" id="privacy-unlock">Sblocca archivio</button><p class="muted">La password non viene salvata nel browser.</p></div></div><div class="layout"><aside><div class="brand"><span>🛡</span><div><b>GSA Manager</b><small>Studio Geom. Simone Montanari</small></div></div>
+<nav><button class="active" data-page="dashboard">⌂ Dashboard</button><button data-page="condomini">▦ Condomini</button><button data-page="sopralluoghi">☷ Sopralluoghi</button><button data-page="archivio">▤ Verbali</button><button data-page="backup">⇄ Backup e trasferimento</button></nav><div aria-live="polite" class="backup-indicator" id="backup-indicator">Verifica stato backup…</div>
+<div class="asidefoot">LP0 · Bozze e documentazione informativa<br/><small>Ambiente di prova isolato · 2.0 LAB</small></div></aside>
+<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2C.3 + Dashboard a tendina · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill">● Offline-ready</span></header>
+<section aria-label="Backup cifrati su Google Drive" id="drive-lab-panel" style="background:#eaf4ff;border:1px solid #9dc6ea;border-radius:9px;padding:13px 16px;margin-bottom:12px">
+<div style="font-weight:700;color:#12304a">Google Drive — backup cifrati (LAB)</div>
+<p id="drive-lab-status" role="status" style="margin:8px 0;color:#12304a">Non collegato. Nessun dato trasferito.</p>
+<div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap">
+<button class="primary" id="drive-lab-connect" type="button">Collega Google Drive (TEST)</button>
+<button disabled="" id="drive-lab-disconnect" type="button">Disconnetti</button>
+</div>
+<div hidden="" id="drive-lab-transfer" style="margin-top:12px;border-top:1px solid #9dc6ea;padding-top:12px">
+<label for="drive-lab-file"><b>1. Scegli un backup JSON cifrato già scaricato e verificato:</b></label>
+<input accept=".json,application/json" id="drive-lab-file" style="display:block;margin:8px 0" type="file"/>
+<button id="drive-lab-upload" type="button">2. Carica una nuova copia cifrata su Drive</button>
+<button id="drive-lab-list" type="button">Aggiorna elenco backup Drive</button><p class="gsa-fold-hint">Apri una fase cliccando sul titolo; richiudila allo stesso modo. Il LAB ricorda le sezioni aperte su questo browser.</p><details class="gsa-phase-fold" data-phase-key="2a"><summary>FASE 2A — Controllo sincronizzazione</summary><div style="margin-top:12px;padding:12px;border:1px solid #9dc6ea;border-radius:8px;background:#fff">
+
+<p style="margin:8px 0">Confronta l’archivio locale con il backup LAB più recente su Drive. Chiede la password del backup. Non importa, non carica e non modifica dati.</p>
+<button id="drive-lab-compare" type="button">Controlla sincronizzazione</button>
+<pre id="drive-lab-compare-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin-top:10px"></pre>
+</div></details><details class="gsa-phase-fold" data-phase-key="2b"><summary>FASE 2B — Sincronizzazione manuale protetta</summary><section aria-label="Sincronizzazione manuale protetta" id="drive-lab-sync" style="margin-top:12px;padding:12px;border:2px solid #91b8ac;border-radius:8px;background:#f0faf6">
+
+<p style="margin:8px 0">Procedura a senso unico per volta. Prima controlla che gli archivi siano allineati, poi pubblica le modifiche oppure ricevi quelle dell’altro PC. Se ci sono conflitti o eliminazioni, il programma blocca l’operazione. La funzione 4 è un recupero guidato SOLO per un conflitto di note già risolto manualmente: richiede il backup cifrato locale esatto e non modifica altri campi.</p>
+<div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap">
+<button id="drive-lab-sync-init" type="button">1. Allinea punto di partenza</button>
+<button id="drive-lab-sync-pull" type="button">2. Ricevi da Drive</button>
+<button id="drive-lab-sync-push" type="button">3. Pubblica su Drive</button>
+<button id="drive-lab-sync-resolve" title="Solo dopo la verifica e l’unione manuale delle note" type="button">4. Pubblica note riconciliate (LAB)</button>
+<input accept=".json,application/json" hidden="" id="drive-lab-resolve-file" type="file"/>
+</div>
+<pre id="drive-lab-sync-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0"></pre>
+<small>Non usare su due dispositivi contemporaneamente. Eliminazioni non sincronizzate: vengono bloccate. I backup Drive restano copie separate. Non sostituisce un sistema di sincronizzazione multiutente.</small>
+</section></details><details class="gsa-phase-fold" data-phase-key="2c1"><summary>FASE 2C.1 — Controllo automatico</summary><section aria-label="Controllo automatico della sincronizzazione" id="drive-lab-auto" style="margin-top:12px;padding:12px;border:2px solid #8ba6d5;border-radius:8px;background:#f8faff">
+
+<p style="margin:8px 0">Dopo il collegamento a Drive, quando torni alla scheda e periodicamente, il LAB controlla automaticamente se il backup remoto o l'archivio locale sono cambiati rispetto all'ultimo allineamento. Non chiede password, non legge i contenuti cifrati e non trasferisce né modifica dati.</p>
+<pre aria-live="polite" id="drive-lab-auto-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:8px 0">In attesa del collegamento a Google Drive.</pre>
+</section></details><details class="gsa-phase-fold" data-phase-key="2c2"><summary>FASE 2C.2 — Differenze per campo</summary><section aria-label="Analisi differenze per campo" id="drive-lab-field-diff" style="margin-top:12px;padding:12px;border:2px solid #b6a4d8;border-radius:8px;background:#fbf9ff">
+
+<p style="margin:8px 0">Confronta i singoli campi dell'archivio locale con l'ultimo backup cifrato su Drive. Richiede la password per leggere il backup, ma non modifica né trasferisce dati. Senza una copia storica dei singoli campi, segnala solo potenziali conflitti, non fusioni automatiche.</p>
+<button id="drive-lab-field-compare" type="button">Analizza differenze per campo</button>
+<pre aria-live="polite" id="drive-lab-field-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">In attesa del confronto.</pre>
+</section></details><details class="gsa-phase-fold" data-phase-key="2c3"><summary>FASE 2C.3 — Conflitti intelligenti</summary><section aria-label="Analisi storica dei conflitti" id="drive-lab-conflict" style="margin-top:12px;padding:12px;border:2px solid #d5ad6e;border-radius:8px;background:#fffaf2">
+
+<p style="margin:8px 0">Confronto a tre vie: stato del PC, backup cifrato della base storica e ultimo backup Drive. Riconosce modifiche su campi distinti, modifiche allo stesso campo, nuovi record ed eliminazioni. Richiede la password del backup (anche due volte). Non esegue alcuna fusione o trasferimento.</p>
+<button id="drive-lab-conflict-analyze" type="button">Analizza conflitti rispetto alla base</button>
+<pre aria-live="polite" id="drive-lab-conflict-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">In attesa dell’analisi.</pre>
+</section></details>
+
+
+
+
+
+<div aria-live="polite" id="drive-lab-files" style="margin-top:12px"></div>
+</div>
+<small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
 </section><div id="content"></div></main></div><div id="toast" role="status"></div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-9"></script></body></html>
+<script async="" defer="" src="https://accounts.google.com/gsi/client"></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-9"></script><script id="gsa-dashboard-accordion-state">
+/* Salva soltanto lo stato aperto/chiuso delle fasi; mai password o dati GSA. */
+(() => {
+  'use strict';
+  const key = 'gsa-lab-dashboard-folds-v1';
+  const folds = Array.from(document.querySelectorAll('#drive-lab-transfer details.gsa-phase-fold'));
+  let saved = {};
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '{}');
+    if (value && typeof value === 'object' && !Array.isArray(value)) saved = value;
+  } catch (_) { /* Modalità privata o preferenze assenti. */ }
+  for (const fold of folds) {
+    const phase = fold.dataset.phaseKey;
+    fold.open = typeof saved[phase] === 'boolean' ? saved[phase] : phase === '2c1';
+  }
+  for (const fold of folds) {
+    fold.addEventListener('toggle', () => {
+      const current = {};
+      for (const item of folds) current[item.dataset.phaseKey] = item.open;
+      try { localStorage.setItem(key, JSON.stringify(current)); } catch (_) { /* Non essenziale. */ }
+    });
+  }
+})();
+</script></body></html>
