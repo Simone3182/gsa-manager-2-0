@@ -11,7 +11,7 @@
 <body><div id="privacy-lock" class="privacy-overlay" style="display:none"><div class="privacy-card"><h1>🔐 GSA Manager</h1><p class="privacy-message">Archivio bloccato per proteggere i dati.</p><button id="privacy-unlock" class="primary">Sblocca archivio</button><p class="muted">La password non viene salvata nel browser.</p></div></div><div class="layout"><aside><div class="brand"><span>🛡</span><div><b>GSA Manager</b><small>Studio Geom. Simone Montanari</small></div></div>
 <nav><button data-page="dashboard" class="active">⌂ Dashboard</button><button data-page="condomini">▦ Condomini</button><button data-page="sopralluoghi">☷ Sopralluoghi</button><button data-page="archivio">▤ Verbali</button><button data-page="backup">⇄ Backup e trasferimento</button></nav><div id="backup-indicator" class="backup-indicator" aria-live="polite">Verifica stato backup…</div>
 <div class="asidefoot">LP0 · Bozze e documentazione informativa<br><small>Ambiente di prova isolato · 2.0 LAB</small></div></aside>
-<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2C.1: controllo automatico in sola lettura · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill">● Offline-ready</span></header>
+<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2C.2: analisi delle differenze per campo · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill">● Offline-ready</span></header>
 <section id="drive-lab-panel" aria-label="Backup cifrati su Google Drive" style="background:#eaf4ff;border:1px solid #9dc6ea;border-radius:9px;padding:13px 16px;margin-bottom:12px">
   <div style="font-weight:700;color:#12304a">Google Drive — backup cifrati (LAB)</div>
   <p id="drive-lab-status" role="status" style="margin:8px 0;color:#12304a">Non collegato. Nessun dato trasferito.</p>
@@ -28,6 +28,12 @@
       <b>FASE 2C.1 — Controllo automatico (sola lettura)</b>
       <p style="margin:8px 0">Dopo il collegamento a Drive, quando torni alla scheda e periodicamente, il LAB controlla automaticamente se il backup remoto o l'archivio locale sono cambiati rispetto all'ultimo allineamento. Non chiede password, non legge i contenuti cifrati e non trasferisce né modifica dati.</p>
       <pre id="drive-lab-auto-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:8px 0">In attesa del collegamento a Google Drive.</pre>
+    </section>
+    <section id="drive-lab-field-diff" style="margin-top:12px;padding:12px;border:2px solid #b6a4d8;border-radius:8px;background:#fbf9ff" aria-label="Analisi differenze per campo">
+      <b>FASE 2C.2 — Differenze per campo (sola lettura)</b>
+      <p style="margin:8px 0">Confronta i singoli campi dell'archivio locale con l'ultimo backup cifrato su Drive. Richiede la password per leggere il backup, ma non modifica né trasferisce dati. Senza una copia storica dei singoli campi, segnala solo potenziali conflitti, non fusioni automatiche.</p>
+      <button type="button" id="drive-lab-field-compare">Analizza differenze per campo</button>
+      <pre id="drive-lab-field-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">In attesa del confronto.</pre>
     </section>
     <div style="margin-top:12px;padding:12px;border:1px solid #9dc6ea;border-radius:8px;background:#fff">
       <b>FASE 2A — Controllo sincronizzazione (sola lettura)</b>
@@ -52,4 +58,4 @@
   </div>
   <small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
 </section><div id="content"></div></main></div><div id="toast" role="status"></div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-7"></script></body></html>
+<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-8"></script></body></html>

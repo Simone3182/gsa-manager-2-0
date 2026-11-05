@@ -26,6 +26,8 @@
   const resolveFile = $('drive-lab-resolve-file');
   const syncResult = $('drive-lab-sync-result');
   const autoResult = $('drive-lab-auto-result');
+  const fieldButton = $('drive-lab-field-compare');
+  const fieldResult = $('drive-lab-field-result');
   let autoChecking = false;
   let tokenClient = null;
   let accessToken = null;
@@ -43,6 +45,7 @@
     upload.disabled = !connected || busy;
     refresh.disabled = !connected || busy;
     compareButton.disabled = !connected || busy;
+    fieldButton.disabled = !connected || busy;
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -56,6 +59,7 @@
     resolveFile.value = '';
     filesEl.replaceChildren();
     compareResult.textContent = '';
+    fieldResult.textContent = 'In attesa del confronto.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
@@ -182,6 +186,74 @@
       for (const id of d.keys()) if (!l.has(id)) result.onlyDrive++;
     }
     return result;
+  }
+  // FASE 2C.2: analisi delle differenze dei campi, SENZA scritture.
+  // Non conserva valori, non propone un merge e non tratta 'updated' come prova di paternità.
+  const fieldLabels = {
+    nome:'Denominazione', cf:'Codice fiscale', indirizzo:'Indirizzo', comune:'Comune',
+    provincia:'Provincia', amministratore:'Amministratore', email:'Email', telefono:'Telefono',
+    altezza:'Altezza', piani:'Piani', scale:'Scale', unita:'Unità immobiliari',
+    ascensore:'Ascensore', autorimessa:'Autorimessa', impianti:'Altri impianti / note',
+    fotoEdificio:'Fotografia edificio', updated:'Data aggiornamento'
+  };
+  function fieldDiffReport(local, remote, base, file) {
+    const lines = ['ANALISI PER CAMPO — NESSUN DATO MODIFICATO',
+      'Backup Drive: ' + file.name];
+    const possibleConflict = !!base && base.id !== file.id;
+    const entries = [];
+    let changed = 0, onlyLocal = 0, onlyDrive = 0, same = 0;
+    for (const name of names) {
+      const l = new Map(local[name].map(r => [r.id, r]));
+      const d = new Map(remote[name].map(r => [r.id, r]));
+      const ids = [...new Set([...l.keys(), ...d.keys()])].sort();
+      for (const id of ids) {
+        const left = l.get(id), right = d.get(id);
+        const title = (left?.nome || right?.nome || id).toString().slice(0,90);
+        const head = name + ' / ' + title + ' (ID ' + id.slice(0,12) + '…)';
+        if (!left) { onlyDrive++; entries.push('SOLO DRIVE: ' + head); continue; }
+        if (!right) { onlyLocal++; entries.push('SOLO PC: ' + head); continue; }
+        const keys = [...new Set([...Object.keys(left),...Object.keys(right)])].sort();
+        const diff = keys.filter(k => JSON.stringify(stableValue(left[k])) !== JSON.stringify(stableValue(right[k])));
+        if (!diff.length) { same++; continue; }
+        changed++;
+        const meaningful = diff.filter(k => k !== 'updated');
+        const labels = meaningful.map(k => fieldLabels[k] || k);
+        entries.push('DIVERSO: ' + head + '\n  Campi: ' + (labels.length ? labels.join(', ') : 'solo data aggiornamento') +
+          (diff.includes('updated') ? ' [data aggiornamento diversa]' : ''));
+      }
+    }
+    lines.push('Uguali: ' + same + ' · Differenti: ' + changed +
+      ' · Solo PC: ' + onlyLocal + ' · Solo Drive: ' + onlyDrive);
+    if (possibleConflict) lines.push('ATTENZIONE: Drive è cambiato rispetto alla base di questo PC. Le differenze potrebbero essere conflitti.');
+    if (!base) lines.push('ATTENZIONE: punto di partenza assente; impossibile attribuire le modifiche.');
+    lines.push('Non è possibile stabilire chi abbia modificato ogni campo senza uno storico completo.');
+    if (entries.length) {
+      lines.push('--- DETTAGLIO (massimo 50 record) ---');
+      lines.push(...entries.slice(0,50));
+      if (entries.length > 50) lines.push('Altri ' + (entries.length - 50) + ' record non visualizzati.');
+    } else lines.push('Nessuna differenza nei record.');
+    lines.push('NESSUNA FUSIONE, IMPORTAZIONE O PUBBLICAZIONE ESEGUITA.');
+    return lines.join('\n');
+  }
+  async function doFieldCompare() {
+    assertReady();
+    const latest = await getLatest();
+    if (!confirm('ANALISI DIFFERENZE PER CAMPO — SOLA LETTURA\n\n' +
+      'Confrontare con ' + latest.name + '?\nSarà richiesta la password del backup Drive.\n' +
+      'Non verrà modificato alcun dato.')) {
+      fieldResult.textContent = 'Confronto annullato. Nessun dato modificato.';
+      return;
+    }
+    const local = await getLocal();
+    const before = await fingerprint(local);
+    const remote = await readRemote(latest);
+    const [now, current, base] = await Promise.all([getLatest(),getLocal(),metaGet(BASE_KEY)]);
+    if (now.id !== latest.id || (latest.md5Checksum && now.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive è cambiato durante la lettura. Riprova il confronto.');
+    if (await fingerprint(current) !== before)
+      throw Error('Archivio locale cambiato durante la lettura. Riprova il confronto.');
+    assertReady();
+    fieldResult.textContent = fieldDiffReport(local, remote, base, latest);
   }
   // FASE 2B — protocollo di hand-off, un solo PC alla volta.
   // Le snapshot sono immutabili (nuovo file per ogni pubblicazione).
@@ -594,6 +666,11 @@ async function doSyncResolve(backupFile) {
     compareResult.textContent = report;
     setStatus('Confronto in sola lettura completato. Nessun dato modificato.');
   }
+  fieldButton.addEventListener('click', () => runJob(async () => {
+    fieldResult.textContent = 'Analisi in corso (sola lettura)…';
+    try { await doFieldCompare(); }
+    catch (err) { fieldResult.textContent = 'ANALISI INTERROTTA: ' + err.message + '\nNessun dato modificato.'; throw err; }
+  }));
   compareButton.addEventListener('click', () => runJob(async () => {
     try { await checkSyncReadOnly(); }
     catch (err) { compareResult.textContent = 'Controllo non completato: ' + err.message + '\nNessun dato modificato.'; throw err; }
