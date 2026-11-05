@@ -25,6 +25,8 @@
   const syncResolve = $('drive-lab-sync-resolve');
   const resolveFile = $('drive-lab-resolve-file');
   const syncResult = $('drive-lab-sync-result');
+  const autoResult = $('drive-lab-auto-result');
+  let autoChecking = false;
   let tokenClient = null;
   let accessToken = null;
   let busy = false;
@@ -55,6 +57,7 @@
     filesEl.replaceChildren();
     compareResult.textContent = '';
     syncResult.textContent = '';
+    autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
   }
   function assertReady() {
@@ -86,6 +89,7 @@
             const res = await api('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)');
             const data = await res.json();
             setStatus('Collegamento riuscito con ' + (data.user?.emailAddress || 'account Google') + '. Nessun backup caricato automaticamente.');
+            void autoCheck();
           } catch (err) { disconnectNow(); setStatus('Verifica accesso non riuscita: ' + err.message); }
         },
         error_callback: err => setStatus('Autorizzazione non completata: ' + (err?.type || 'finestra chiusa'))
@@ -482,6 +486,46 @@ async function doSyncResolve(backupFile) {
     '\nUn solo condominio: note riunite e nessun altro campo modificato rispetto a Drive.\n' +
     'Backup cifrato precedente conservato. Prima di usare il PC di casa, ricevi il nuovo backup da Drive.';
 }
+
+  // FASE 2C.1: controllo automatico NON distruttivo. Non apre il backup remoto,
+  // non chiede password e non modifica dati locali/Drive. La base 2B rimane invariata.
+  async function autoCheck() {
+    if (autoChecking || busy || !accessToken || !isVaultUnlocked()) return;
+    autoChecking = true;
+    autoResult.textContent = 'Controllo automatico in corso (sola lettura)…';
+    try {
+      const base = await metaGet(BASE_KEY);
+      const latest = await getLatest();
+      const local = await getLocal();
+      const localHash = await fingerprint(local);
+      if (!accessToken || !isVaultUnlocked()) return;
+      const remoteChanged = !!base && (base.id !== latest.id ||
+        (!!base.md5 && !!latest.md5Checksum && base.md5 !== latest.md5Checksum));
+      const localChanged = !!base && base.hash !== localHash;
+      const stamp = new Date().toLocaleTimeString('it-IT');
+      const prefix = 'Controllo automatico ' + stamp + '\nBackup più recente: ' + latest.name + '\n';
+      if (!base) {
+        autoResult.textContent = prefix + 'PUNTO DI PARTENZA ASSENTE. Usa la procedura manuale protetta per allineare i dispositivi. Nessun dato modificato.';
+      } else if (remoteChanged && localChanged) {
+        autoResult.textContent = prefix + 'ATTENZIONE: modifiche sia su questo PC sia su Drive. Possibile conflitto. Non ricevere né pubblicare prima di un confronto protetto. Nessun dato modificato.';
+      } else if (remoteChanged) {
+        autoResult.textContent = prefix + 'NOVITÀ SU DRIVE: è disponibile un backup successivo al punto di partenza. Nessuna modifica locale rilevata. Per ora usa «Ricevi da Drive» con backup di sicurezza.';
+      } else if (localChanged) {
+        autoResult.textContent = prefix + 'MODIFICHE LOCALI: Drive non risulta cambiato. Per ora usa «Pubblica su Drive» con la procedura protetta.';
+      } else {
+        autoResult.textContent = prefix + 'NESSUNA MODIFICA rispetto all’ultimo allineamento. Nessun dato trasferito.';
+      }
+    } catch (err) {
+      autoResult.textContent = 'Controllo automatico non riuscito: ' + err.message + '\nNessun dato modificato.';
+    } finally {
+      autoChecking = false;
+    }
+  }
+  // Solo durante una sessione già autorizzata: mai riaprire automaticamente OAuth.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void autoCheck();
+  });
+  setInterval(() => { if (!document.hidden) void autoCheck(); }, 120000);
 
   function syncJob(fn) {
     return runJob(async () => {
