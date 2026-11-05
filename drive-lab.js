@@ -28,6 +28,8 @@
   const autoResult = $('drive-lab-auto-result');
   const fieldButton = $('drive-lab-field-compare');
   const fieldResult = $('drive-lab-field-result');
+  const conflictButton = $('drive-lab-conflict-analyze');
+  const conflictResult = $('drive-lab-conflict-result');
   let autoChecking = false;
   let tokenClient = null;
   let accessToken = null;
@@ -46,6 +48,7 @@
     refresh.disabled = !connected || busy;
     compareButton.disabled = !connected || busy;
     fieldButton.disabled = !connected || busy;
+    conflictButton.disabled = !connected || busy;
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -60,6 +63,7 @@
     filesEl.replaceChildren();
     compareResult.textContent = '';
     fieldResult.textContent = 'In attesa del confronto.';
+    conflictResult.textContent = 'In attesa dell’analisi.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
@@ -255,6 +259,119 @@
     assertReady();
     fieldResult.textContent = fieldDiffReport(local, remote, base, latest);
   }
+  // FASE 2C.3: analisi a tre vie. Base recuperata da Drive e verificata con
+  // hash SHA-256: NON memorizziamo copie in chiaro né effettuiamo fusioni.
+  // Le variazioni del solo campo 'updated' non determinano l'origine dei dati.
+  function valueEqual(a, b) {
+    return JSON.stringify(stableValue(a)) === JSON.stringify(stableValue(b));
+  }
+  function threeWayReport(baseData, local, remote, baseFile, latest) {
+    const stats = {same:0, pc:0, drive:0, independent:0, equal:0, conflict:0, deletion:0, newPc:0, newDrive:0, newEqual:0};
+    const detail = [];
+    const nice = k => fieldLabels[k] || k;
+    const add = (type, label, explanation) => {
+      stats[type]++;
+      detail.push(type.toUpperCase() + ': ' + label + (explanation ? '\n  ' + explanation : ''));
+    };
+    for (const name of names) {
+      const b = new Map(baseData[name].map(x => [x.id, x]));
+      const l = new Map(local[name].map(x => [x.id, x]));
+      const d = new Map(remote[name].map(x => [x.id, x]));
+      for (const id of [...new Set([...b.keys(), ...l.keys(), ...d.keys()])].sort()) {
+        const old = b.get(id), left = l.get(id), right = d.get(id);
+        const label = name + ' / ' + String(left?.nome || right?.nome || old?.nome || id).slice(0, 70) + ' (ID ' + id.slice(0, 12) + '…)';
+        if (old && (!left || !right)) {
+          add('deletion', label, 'Record della base assente da almeno un archivio: intervento manuale necessario.');
+          continue;
+        }
+        if (!old) {
+          if (left && right) {
+            if (valueEqual(left, right)) add('newEqual', label, 'Nuovo record identico su PC e Drive.');
+            else add('conflict', label, 'Stesso nuovo ID, contenuti diversi: conflitto.');
+          } else if (left) add('newPc', label, 'Nuovo record presente solo sul PC.');
+          else add('newDrive', label, 'Nuovo record presente solo su Drive.');
+          continue;
+        }
+        const keys = [...new Set([...Object.keys(old), ...Object.keys(left), ...Object.keys(right)])]
+          .filter(k => k !== 'id' && k !== 'updated').sort();
+        const onlyPc = [], onlyDrive = [], bothEqual = [], collision = [];
+        for (const k of keys) {
+          const pcChanged = !valueEqual(old[k], left[k]);
+          const driveChanged = !valueEqual(old[k], right[k]);
+          if (pcChanged && driveChanged) {
+            if (valueEqual(left[k], right[k])) bothEqual.push(k);
+            else collision.push(k);
+          } else if (pcChanged) onlyPc.push(k);
+          else if (driveChanged) onlyDrive.push(k);
+        }
+        const labels = keys => keys.map(nice).join(', ');
+        if (collision.length) add('conflict', label, 'STESSI CAMPI MODIFICATI DIVERSAMENTE: ' + labels(collision) + '. Nessuna fusione consentita.');
+        else if (onlyPc.length && onlyDrive.length) add('independent', label, 'Modifiche a campi distinti: PC [' + labels(onlyPc) + ']; Drive [' + labels(onlyDrive) + ']. Candidato a fusione, NON applicata.' + (bothEqual.length ? ' Modifiche identiche: ' + labels(bothEqual) : ''));
+        else if (onlyPc.length) add('pc', label, 'Modificati solo sul PC: ' + labels(onlyPc) + (bothEqual.length ? '; modifiche identiche su entrambi: ' + labels(bothEqual) : ''));
+        else if (onlyDrive.length) add('drive', label, 'Modificati solo su Drive: ' + labels(onlyDrive) + (bothEqual.length ? '; modifiche identiche su entrambi: ' + labels(bothEqual) : ''));
+        else if (bothEqual.length) add('equal', label, 'Entrambi hanno modificato nello stesso modo: ' + labels(bothEqual));
+        else if (!valueEqual(left, right) || !valueEqual(old, left)) {
+          add('equal', label, 'Nessuna differenza sostanziale; possono variare i metadati (es. data aggiornamento).');
+        } else add('same', label, '');
+      }
+    }
+    const lines = [
+      'FASE 2C.3 — ANALISI STORICA A TRE VIE (SOLA LETTURA)',
+      'Base verificata: ' + baseFile.name,
+      'Drive attuale: ' + latest.name,
+      'Invariati: ' + stats.same,
+      'Modifiche solo PC: ' + stats.pc + ' · Solo Drive: ' + stats.drive,
+      'Modifiche su campi distinti: ' + stats.independent,
+      'Modifiche identiche su entrambi: ' + stats.equal,
+      'Nuovi solo PC: ' + stats.newPc + ' · Nuovi solo Drive: ' + stats.newDrive + ' · Nuovi identici: ' + stats.newEqual,
+      'CONFLITTI: ' + stats.conflict + ' · ELIMINAZIONI/ASSENZE: ' + stats.deletion,
+      stats.conflict || stats.deletion ? 'ESITO: ATTENZIONE — sono necessari interventi manuali.' :
+        stats.independent ? 'ESITO: modifiche compatibili per campo individuate, ma NON fuse.' :
+          'ESITO: nessun conflitto sostanziale rilevato nei campi confrontati.',
+      'Le liste e gli oggetti complessi sono trattati come campi indivisibili.',
+      'Le date aggiornamento non provano la paternità delle modifiche.',
+      'NESSUNA IMPORTAZIONE, FUSIONE, PUBBLICAZIONE O MODIFICA ESEGUITA.'
+    ];
+    if (detail.length) {
+      lines.push('--- DETTAGLIO (massimo 50 record) ---');
+      lines.push(...detail.filter(x => !x.startsWith('SAME:')).slice(0, 50));
+      const shown = detail.filter(x => !x.startsWith('SAME:')).length;
+      if (shown > 50) lines.push('Altri ' + (shown - 50) + ' record non visualizzati.');
+    }
+    return lines.join('\n');
+  }
+  async function doConflictAnalysis() {
+    assertReady();
+    const base = await metaGet(BASE_KEY);
+    if (!base?.id || !base?.hash) throw Error('Punto di partenza mancante: impossibile eseguire il confronto storico. Non impostare una nuova base se ci sono modifiche non allineate.');
+    const latest = await getLatest();
+    if (!confirm('FASE 2C.3 — ANALISI STORICA A TRE VIE (SOLA LETTURA)\n\n' +
+      'Confrontare PC, backup di base e ultimo Drive?\n' +
+      'La password può essere richiesta due volte (base e backup recente).\n' +
+      'Nessun dato verrà modificato.')) {
+      conflictResult.textContent = 'Analisi annullata. Nessun dato modificato.';
+      return;
+    }
+    const local = await getLocal();
+    const before = await fingerprint(local);
+    // Il backup di base è già sul Drive ed è cifrato. Il suo contenuto deve
+    // corrispondere all'hash della baseline registrato in precedenza.
+    const baseFile = {id:base.id, name:base.name || '(base storica)'};
+    const baseData = await readRemote(baseFile);
+    if (await fingerprint(baseData) !== base.hash)
+      throw Error('Il backup di base non corrisponde all’hash storico. Analisi bloccata.');
+    const remote = latest.id === base.id ? baseData : await readRemote(latest);
+    const [currentLatest, currentLocal, currentBase] = await Promise.all([getLatest(),getLocal(),metaGet(BASE_KEY)]);
+    if (currentLatest.id !== latest.id || (latest.md5Checksum && currentLatest.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive è cambiato durante l’analisi. Riprova.');
+    if (await fingerprint(currentLocal) !== before)
+      throw Error('Il PC è cambiato durante l’analisi. Riprova.');
+    if (!currentBase || currentBase.id !== base.id || currentBase.hash !== base.hash)
+      throw Error('La base di sincronizzazione è cambiata durante l’analisi. Riprova.');
+    assertReady();
+    conflictResult.textContent = threeWayReport(baseData, local, remote, baseFile, latest);
+  }
+
   // FASE 2B — protocollo di hand-off, un solo PC alla volta.
   // Le snapshot sono immutabili (nuovo file per ogni pubblicazione).
   // L'ID del backup cloud + checksum costituisce il riferimento di base.
@@ -666,6 +783,11 @@ async function doSyncResolve(backupFile) {
     compareResult.textContent = report;
     setStatus('Confronto in sola lettura completato. Nessun dato modificato.');
   }
+  conflictButton.addEventListener('click', () => runJob(async () => {
+    conflictResult.textContent = 'Analisi storica in corso (sola lettura)…';
+    try { await doConflictAnalysis(); }
+    catch (err) { conflictResult.textContent = 'ANALISI INTERROTTA: ' + err.message + '\nNessun dato modificato.'; throw err; }
+  }));
   fieldButton.addEventListener('click', () => runJob(async () => {
     fieldResult.textContent = 'Analisi in corso (sola lettura)…';
     try { await doFieldCompare(); }
