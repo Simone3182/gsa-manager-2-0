@@ -1,6 +1,6 @@
 /* GSA Manager 2.0 LAB — FASE 2: backup cifrati, trasferimento manuale e controllato.
- * NESSUNA lettura dell'archivio locale. NESSUNA importazione automatica.
- * Solo backup già cifrati in formato gsa-manager-encrypted-v1.
+ * FASE 2A: confronto in sola lettura. FASE 2B: sincronizzazione manuale
+ * protetta con baseline e blocco dei conflitti. Solo dati fittizi LAB.
  */
 (() => {
   'use strict';
@@ -19,6 +19,10 @@
   const compareButton = $('drive-lab-compare');
   const compareResult = $('drive-lab-compare-result');
   const filesEl = $('drive-lab-files');
+  const syncInit = $('drive-lab-sync-init');
+  const syncPull = $('drive-lab-sync-pull');
+  const syncPush = $('drive-lab-sync-push');
+  const syncResult = $('drive-lab-sync-result');
   let tokenClient = null;
   let accessToken = null;
   let busy = false;
@@ -36,6 +40,7 @@
     refresh.disabled = !connected || busy;
     compareButton.disabled = !connected || busy;
     fileInput.disabled = !connected || busy;
+    for (const el of [syncInit,syncPull,syncPush]) el.disabled = !connected || busy;
   };
   function disconnectNow() {
     const oldToken = accessToken;
@@ -46,6 +51,7 @@
     fileInput.value = '';
     filesEl.replaceChildren();
     compareResult.textContent = '';
+    syncResult.textContent = '';
     setControls();
   }
   function assertReady() {
@@ -170,6 +176,202 @@
     }
     return result;
   }
+  // FASE 2B — protocollo di hand-off, un solo PC alla volta.
+  // Le snapshot sono immutabili (nuovo file per ogni pubblicazione).
+  // L'ID del backup cloud + checksum costituisce il riferimento di base.
+  // NON si sincronizzano eliminazioni, NON si risolvono conflitti con "ultimo vince".
+  const BASE_KEY = 'labManualSyncBaseV1';
+  const names = ['condomini','visite','classificazioni'];
+  const idMap = data => Object.fromEntries(names.map(n => [n, data[n].map(x => x.id).sort()]));
+  const hasAllIds = (data, baseIds) => names.every(n => {
+    const ids = new Set(data[n].map(x => x.id));
+    return (baseIds[n] || []).every(id => ids.has(id));
+  });
+  async function fingerprint(data) {
+    const canonical = {};
+    for (const n of names) canonical[n] = data[n].slice().sort((a,b) => a.id.localeCompare(b.id)).map(stableValue);
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonical)));
+    return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2,'0')).join('');
+  }
+  async function getLatest() {
+    const params = new URLSearchParams({
+      q: "trashed = false and name contains '" + PREFIX + "'",
+      fields: 'nextPageToken,files(id,name,size,createdTime,md5Checksum)',
+      page_size:'100', orderBy:'createdTime desc'
+    });
+    const res = await api('https://www.googleapis.com/drive/v3/files?' + params);
+    const data = await res.json();
+    if (data.nextPageToken) throw Error('Oltre 100 backup: selezione automatica bloccata.');
+    const candidates = (data.files || []).filter(f => safeFilename(f.name));
+    if (!candidates.length) throw Error('Nessun backup LAB su Drive.');
+    // Ordinamento esplicito, con id per spareggio: nessuna selezione ambigua.
+    candidates.sort((a,b) => b.createdTime.localeCompare(a.createdTime) || b.id.localeCompare(a.id));
+    if (Number(candidates[0].size) > MAX_BYTES) throw Error('Backup Drive troppo grande (20 MB).');
+    return candidates[0];
+  }
+  async function readRemote(file) {
+    const res = await api('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(file.id) + '?alt=media');
+    const content = await res.text();
+    if (new Blob([content]).size > MAX_BYTES) throw Error('Backup Drive troppo grande.');
+    let encrypted;
+    try { encrypted = JSON.parse(content); } catch (_) { throw Error('JSON remoto non valido.'); }
+    if (encrypted?.format !== 'gsa-manager-encrypted-v1') throw Error('Backup Drive non cifrato.');
+    const data = await decodeBackup(encrypted); // password solo in memoria durante la lettura
+    validateBackup(data);
+    return data;
+  }
+  async function getLocal() {
+    const data = await collectBackup();
+    validateBackup(data);
+    return data;
+  }
+  async function backupConfirmed() {
+    const [change, verified] = await Promise.all([metaGet('lastChange'),metaGet('lastVerified')]);
+    return !!verified && (!change || verified >= change);
+  }
+  function checkCloudIdentity(base, latest) {
+    if (base.id !== latest.id || (base.md5 && latest.md5Checksum && base.md5 !== latest.md5Checksum))
+      throw Error('Drive è cambiato dopo l’ultimo allineamento. Non pubblicare: ricevi prima gli aggiornamenti oppure verifica il conflitto.');
+  }
+  async function saveBase(file, data) {
+    const entry = {id:file.id, md5:file.md5Checksum || '', name:file.name,
+      hash:await fingerprint(data), ids:idMap(data), at:new Date().toISOString()};
+    await metaSet(BASE_KEY, entry);
+    return entry;
+  }
+  async function doSyncInit() {
+    assertReady();
+    const latest = await getLatest();
+    const local = await getLocal();
+    const localHash = await fingerprint(local);
+    const existing = await metaGet(BASE_KEY);
+    if (existing && existing.hash !== localHash)
+      throw Error('Questo PC ha modifiche rispetto al punto di partenza. Non reimpostarlo: usa Pubblica o Ricevi.');
+    if (!confirm('ALLINEAMENTO INIZIALE (LAB)\n\nConfronto con ' + latest.name +
+      '\nSarà richiesta la password del backup Drive.\nNessun condominio sarà modificato.')) return;
+    const remote = await readRemote(latest);
+    if (localHash !== await fingerprint(remote))
+      throw Error('Archivio locale e Drive sono diversi. Allineamento bloccato. Verifica prima quale archivio contiene i dati corretti.');
+    assertReady();
+    // Il cloud non deve essere cambiato durante la lettura.
+    const check = await getLatest();
+    if (check.id !== latest.id || (latest.md5Checksum && check.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive è cambiato durante il controllo. Riprova.');
+    await saveBase(check, local);
+    syncResult.textContent = 'PUNTO DI PARTENZA ALLINEATO\n' + check.name +
+      '\nArchivio locale identico al backup Drive. Nessun dato modificato.\nOra potrai pubblicare modifiche future o ricevere aggiornamenti.';
+  }
+  async function doSyncPull() {
+    assertReady();
+    const latest = await getLatest();
+    const base = await metaGet(BASE_KEY);
+    const local = await getLocal();
+    const localHash = await fingerprint(local);
+    if (!base) throw Error('Prima usa «Allinea punto di partenza» con archivi identici. Non verranno sovrascritti dati non allineati.');
+    if (localHash !== base.hash)
+      throw Error('Ci sono modifiche locali non pubblicate. Ricezione bloccata per evitare sovrascritture.');
+    if (latest.id === base.id) {
+      checkCloudIdentity(base, latest);
+      syncResult.textContent = 'GIÀ ALLINEATO — Drive non contiene nuovi backup. Nessun dato modificato.';
+      return;
+    }
+    if (!await backupConfirmed())
+      throw Error('Prima scarica e conferma un backup cifrato di questo PC nella sezione Backup e trasferimento.');
+    if (!confirm('RICEVI AGGIORNAMENTI (LAB)\n\nBackup più recente: ' + latest.name +
+      '\nIl PC non ha modifiche locali rispetto alla base.\nLe eliminazioni e i conflitti saranno bloccati.\nHai conservato un backup cifrato locale verificato?')) return;
+    const remote = await readRemote(latest);
+    if (!hasAllIds(remote, base.ids))
+      throw Error('Il backup remoto ha eliminato record presenti nella base. Eliminazioni non supportate: operazione bloccata.');
+    const r = compareRecords(local, remote);
+    if (r.onlyLocal) throw Error('Drive non contiene alcuni record locali. Ricezione bloccata.');
+    for (const n of names) {
+      const m = new Map(local[n].map(x => [x.id,x]));
+      for (const item of remote[n]) {
+        const old = m.get(item.id);
+        if (old && JSON.stringify(stableValue(old)) !== JSON.stringify(stableValue(item)) &&
+            item.updated <= old.updated)
+          throw Error('Conflitto di data nel record ' + n + '/' + item.id + '. Ricezione bloccata.');
+      }
+    }
+    // Ricontrolla che non siano cambiati né cloud né locale prima di scrivere.
+    const cloudNow = await getLatest();
+    if (cloudNow.id !== latest.id || (latest.md5Checksum && cloudNow.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive è cambiato durante il controllo. Ricezione bloccata.');
+    if (await fingerprint(await getLocal()) !== localHash)
+      throw Error('L’archivio locale è cambiato durante il controllo. Ricezione bloccata.');
+    assertReady();
+    const stats = await importAtomic(remote);
+    const after = await getLocal();
+    if (await fingerprint(after) !== await fingerprint(remote))
+      throw Error('Importazione parziale o archivio non identico: punto di partenza NON aggiornato. Conserva i backup e interrompi i test.');
+    await saveBase(cloudNow, after);
+    await show('dashboard');
+    syncResult.textContent = 'RICEZIONE COMPLETATA\n' + cloudNow.name +
+      '\nNuovi: ' + stats.aggiunti + ' · Aggiornati: ' + stats.aggiornati +
+      ' · Invariati: ' + stats.ignorati + '\nArchivi equivalenti. Conserva i backup cifrati.';
+  }
+  async function doSyncPush() {
+    assertReady();
+    const base = await metaGet(BASE_KEY);
+    if (!base) throw Error('Prima usa «Allinea punto di partenza» con archivi identici.');
+    const latest = await getLatest();
+    checkCloudIdentity(base, latest);
+    const local = await getLocal();
+    const localHash = await fingerprint(local);
+    if (localHash === base.hash) {
+      syncResult.textContent = 'NESSUNA MODIFICA DA PUBBLICARE. Nessun file caricato.';
+      return;
+    }
+    if (!hasAllIds(local, base.ids))
+      throw Error('Hai eliminato record rispetto alla base. Eliminazioni non sincronizzate: pubblicazione bloccata.');
+    if (!await backupConfirmed())
+      throw Error('Prima scarica e conferma un backup cifrato aggiornato di questo PC.');
+    if (!confirm('PUBBLICA MODIFICHE (LAB)\n\nVerrà creato un NUOVO backup cifrato su Drive.\nIl programma non elimina file e non sovrascrive altri backup.\nNon usare l’altro PC contemporaneamente.\nProcedere?')) return;
+    const pass = prompt('Scegli la password per il NUOVO backup cifrato (almeno 12 caratteri). Non viene salvata:');
+    if (pass === null) return;
+    if (pass.length < 12) throw Error('Password troppo corta (minimo 12 caratteri).');
+    const again = prompt('Ripeti la password del nuovo backup cifrato:');
+    if (again !== pass) throw Error('Le password non coincidono. Nessun file caricato.');
+    const encrypted = await encryptBackup(local, pass);
+    // Prima dell'upload controlliamo di nuovo cloud e dati locali.
+    const cloudNow = await getLatest();
+    checkCloudIdentity(base, cloudNow);
+    if (await fingerprint(await getLocal()) !== localHash)
+      throw Error('Archivio locale cambiato durante la preparazione. Pubblicazione bloccata.');
+    assertReady();
+    const name = PREFIX + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
+    const boundary = 'gsa_lab_' + crypto.randomUUID().replaceAll('-','');
+    const metadata = JSON.stringify({name, mimeType:'application/json'});
+    const content = JSON.stringify(encrypted);
+    if (new Blob([content]).size > MAX_BYTES) throw Error('Backup cifrato oltre 20 MB: caricamento bloccato.');
+    const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + metadata + '\r\n' +
+      '--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + content + '\r\n--' + boundary + '--';
+    const res = await api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,md5Checksum', {
+      method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + boundary}, body
+    });
+    const created = await res.json();
+    const check = await getLatest();
+    if (check.id !== created.id) {
+      syncResult.textContent = 'ATTENZIONE: backup creato (' + created.name +
+        '), ma Drive mostra una copia più recente diversa. Non cambiare PC: conflitto di pubblicazione da verificare.';
+      throw Error('Pubblicazione concorrente rilevata. Non considerare il dispositivo allineato.');
+    }
+    await saveBase(check, local);
+    await listFiles();
+    syncResult.textContent = 'PUBBLICAZIONE COMPLETATA\n' + created.name +
+      '\nCopia cifrata aggiunta a Drive.\nPrima di lavorare dall’altro PC, usa «Ricevi da Drive».\nConserva la password del backup.';
+  }
+  function syncJob(fn) {
+    return runJob(async () => {
+      syncResult.textContent = 'Operazione in corso…';
+      try { await fn(); }
+      catch (e) { syncResult.textContent = 'OPERAZIONE INTERROTTA: ' + e.message + '\nSe era in corso un caricamento, verifica l’elenco dei backup Drive prima di riprovare.'; throw e; }
+    });
+  }
+  syncInit.addEventListener('click', () => syncJob(doSyncInit));
+  syncPull.addEventListener('click', () => syncJob(doSyncPull));
+  syncPush.addEventListener('click', () => syncJob(doSyncPush));
+
   async function checkSyncReadOnly() {
     assertReady();
     compareResult.textContent = 'Controllo in corso: nessun dato verrà modificato…';
@@ -231,8 +433,17 @@
   disconnect.addEventListener('click', () => { disconnectNow(); setStatus('Disconnesso. Nessun dato modificato.'); });
   upload.addEventListener('click', () => runJob(async () => {
     assertReady();
+    const existingBase = await metaGet(BASE_KEY);
+    if (existingBase) throw Error('Questo PC ha già una base di sincronizzazione: usa «Pubblica su Drive» e non il caricamento manuale legacy.');
     const content = await parseEncryptedFile(fileInput.files?.[0]);
-    if (!confirm('ATTENZIONE — LAB\nCaricare una NUOVA copia di questo backup cifrato su Il mio Drive?\nNon verrà sincronizzato o importato automaticamente.\nNon usare dati reali.')) return;
+    // Controllo obbligatorio del contenuto prima di creare una nuova copia su Drive.
+    // Evita di scegliere per errore un backup vecchio (1 condominio anziché 2).
+    const decrypted = await decodeBackup(JSON.parse(content));
+    const counts = validateBackup(decrypted);
+    if (!confirm('ATTENZIONE — LAB\n\nBACKUP SELEZIONATO:\n' +
+      counts.condomini + ' condomini, ' + counts.visite + ' sopralluoghi, ' + counts.classificazioni +
+      ' classificazioni.\nEsportato: ' + humanDate(decrypted.exported) +
+      '\n\nCaricare una NUOVA copia CIFRATA su Drive?\nNon verrà importato o sincronizzato automaticamente.\nNon usare dati reali.')) return;
     const name = PREFIX + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
     const boundary = 'gsa_lab_' + crypto.randomUUID().replaceAll('-','');
     const metadata = JSON.stringify({name, mimeType:'application/json'});
