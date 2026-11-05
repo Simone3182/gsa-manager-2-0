@@ -32,11 +32,13 @@
     </div>
     <section id="drive-lab-sync" style="margin-top:12px;padding:12px;border:2px solid #91b8ac;border-radius:8px;background:#f0faf6" aria-label="Sincronizzazione manuale protetta">
       <b>FASE 2B — Sincronizzazione manuale protetta (solo LAB)</b>
-      <p style="margin:8px 0">Procedura a senso unico per volta. Prima controlla che gli archivi siano allineati, poi pubblica le modifiche oppure ricevi quelle dell’altro PC. Se ci sono conflitti o eliminazioni, il programma blocca l’operazione.</p>
+      <p style="margin:8px 0">Procedura a senso unico per volta. Prima controlla che gli archivi siano allineati, poi pubblica le modifiche oppure ricevi quelle dell’altro PC. Se ci sono conflitti o eliminazioni, il programma blocca l’operazione. La funzione 4 è un recupero guidato SOLO per un conflitto di note già risolto manualmente: richiede il backup cifrato locale esatto e non modifica altri campi.</p>
       <div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" id="drive-lab-sync-init">1. Allinea punto di partenza</button>
         <button type="button" id="drive-lab-sync-pull">2. Ricevi da Drive</button>
         <button type="button" id="drive-lab-sync-push">3. Pubblica su Drive</button>
+        <button type="button" id="drive-lab-sync-resolve" title="Solo dopo la verifica e l’unione manuale delle note">4. Pubblica note riconciliate (LAB)</button>
+        <input id="drive-lab-resolve-file" type="file" accept=".json,application/json" hidden>
       </div>
       <pre id="drive-lab-sync-result" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0"></pre>
       <small>Non usare su due dispositivi contemporaneamente. Eliminazioni non sincronizzate: vengono bloccate. I backup Drive restano copie separate. Non sostituisce un sistema di sincronizzazione multiutente.</small>
@@ -45,4 +47,4 @@
   </div>
   <small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
 </section><div id="content"></div></main></div><div id="toast" role="status"></div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-5"></script></body></html>
+<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-6"></script></body></html>

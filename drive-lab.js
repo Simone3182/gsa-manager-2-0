@@ -22,6 +22,8 @@
   const syncInit = $('drive-lab-sync-init');
   const syncPull = $('drive-lab-sync-pull');
   const syncPush = $('drive-lab-sync-push');
+  const syncResolve = $('drive-lab-sync-resolve');
+  const resolveFile = $('drive-lab-resolve-file');
   const syncResult = $('drive-lab-sync-result');
   let tokenClient = null;
   let accessToken = null;
@@ -40,7 +42,7 @@
     refresh.disabled = !connected || busy;
     compareButton.disabled = !connected || busy;
     fileInput.disabled = !connected || busy;
-    for (const el of [syncInit,syncPull,syncPush]) el.disabled = !connected || busy;
+    for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
   function disconnectNow() {
     const oldToken = accessToken;
@@ -49,6 +51,7 @@
       try { google.accounts.oauth2.revoke(oldToken, () => {}); } catch (_) { /* best effort */ }
     }
     fileInput.value = '';
+    resolveFile.value = '';
     filesEl.replaceChildren();
     compareResult.textContent = '';
     syncResult.textContent = '';
@@ -361,6 +364,125 @@
     syncResult.textContent = 'PUBBLICAZIONE COMPLETATA\n' + created.name +
       '\nCopia cifrata aggiunta a Drive.\nPrima di lavorare dall’altro PC, usa «Ricevi da Drive».\nConserva la password del backup.';
   }
+
+
+// FASE 2B — risoluzione MANUALE di un conflitto circoscritto alle note.
+// Non è un merge automatico: ammette solo un condominio differente e
+// solo i campi "impianti" e "updated". Ogni altra differenza blocca tutto.
+function inspectReconciledNotes(local, remote, base) {
+  if (!hasAllIds(local, base.ids) || !hasAllIds(remote, base.ids))
+    throw Error('Un record del precedente punto di partenza è mancante. Risoluzione bloccata.');
+  const r = compareRecords(local, remote);
+  if (r.onlyLocal || r.onlyDrive || r.different !== 1)
+    throw Error('La risoluzione guidata richiede gli stessi record su PC e Drive e un solo condominio differente. Risultato: ' +
+      r.same + ' uguali, ' + r.different + ' differenti, ' + r.onlyLocal + ' solo PC, ' + r.onlyDrive + ' solo Drive.');
+
+  let changed = null;
+  for (const name of names) {
+    const remoteMap = new Map(remote[name].map(x => [x.id, x]));
+    for (const item of local[name]) {
+      const other = remoteMap.get(item.id);
+      if (!other) throw Error('Record mancante nel backup Drive: ' + name + '/' + item.id);
+      if (JSON.stringify(stableValue(item)) === JSON.stringify(stableValue(other))) continue;
+      if (name !== 'condomini' || changed)
+        throw Error('Sono presenti differenze fuori dall’unico condominio previsto. Operazione bloccata.');
+      const fields = [...new Set([...Object.keys(item), ...Object.keys(other)])]
+        .filter(k => JSON.stringify(stableValue(item[k])) !== JSON.stringify(stableValue(other[k])));
+      const contentFields = fields.filter(k => k !== 'updated');
+      if (contentFields.length !== 1 || contentFields[0] !== 'impianti')
+        throw Error('Differenze anche in altri campi (' + contentFields.join(', ') + '). Non è sicuro pubblicare automaticamente: verifica il record.');
+      const driveNote = typeof other.impianti === 'string' ? other.impianti.trim() : '';
+      const localNote = typeof item.impianti === 'string' ? item.impianti.trim() : '';
+      if (!driveNote || !localNote || localNote === driveNote || !localNote.includes(driveNote))
+        throw Error('Le note locali non contengono integralmente quelle presenti su Drive. Fusione manuale da ricontrollare.');
+      if (!(item.updated > other.updated))
+        throw Error('La data di modifica locale non è successiva a quella su Drive. Risoluzione bloccata.');
+      changed = {name: item.nome || item.id, driveNote, localNote};
+    }
+  }
+  if (!changed) throw Error('Nessuna modifica alle note da riconciliare.');
+  return changed;
+}
+
+async function doSyncResolve(backupFile) {
+  assertReady();
+  if (!backupFile || backupFile.size > MAX_BYTES)
+    throw Error('Seleziona il backup cifrato e verificato di questo PC (massimo 20 MB).');
+  const base = await metaGet(BASE_KEY);
+  if (!base) throw Error('Punto di partenza assente. Questa funzione non può inizializzare una sincronizzazione.');
+  const latest = await getLatest();
+  if (latest.id === base.id) throw Error('Drive non è cambiato: usa la normale funzione «Pubblica su Drive».');
+  const local = await getLocal();
+  const localHash = await fingerprint(local);
+  if (localHash === base.hash) throw Error('Nessuna modifica locale: usa «Ricevi da Drive».');
+
+  // Il backup su disco deve essere CIFRATO e contenere esattamente l'archivio
+  // locale corrente. La semplice conferma manuale del download non basta.
+  let encryptedLocal;
+  try { encryptedLocal = JSON.parse(await backupFile.text()); }
+  catch (_) { throw Error('Il backup locale selezionato non è un JSON valido.'); }
+  if (encryptedLocal?.format !== 'gsa-manager-encrypted-v1')
+    throw Error('È obbligatorio un backup locale CIFRATO.');
+  const savedLocal = await decodeBackup(encryptedLocal);
+  validateBackup(savedLocal);
+  if (await fingerprint(savedLocal) !== localHash)
+    throw Error('Il backup selezionato non corrisponde all’archivio corrente. Scarica e verifica un nuovo backup cifrato.');
+
+  const remote = await readRemote(latest);
+  const info = inspectReconciledNotes(local, remote, base);
+  const check = await getLatest();
+  if (check.id !== latest.id || (latest.md5Checksum && check.md5Checksum !== latest.md5Checksum))
+    throw Error('Drive è cambiato durante la verifica. Non pubblicare.');
+  if (await fingerprint(await getLocal()) !== localHash)
+    throw Error('Archivio locale cambiato durante la verifica. Non pubblicare.');
+
+  if (!confirm('RISOLUZIONE MANUALE — SOLO LAB\n\nCondominio: ' + info.name +
+    '\n\nNote attuali su Drive:\n' + info.driveNote.slice(0, 500) +
+    '\n\nNote riunite sul PC:\n' + info.localNote.slice(0, 700) +
+    '\n\nSono stati verificati gli stessi record e nessun altro campo differente.\n' +
+    'Hai controllato che le note riunite siano corrette?')) return;
+  if (!confirm('CONFERMA PUBBLICAZIONE PROTETTA — SOLO LAB\n\n' +
+    'Il backup cifrato locale è stato aperto e confrontato con l’archivio corrente.\n' +
+    'Verrà aggiunta una NUOVA copia cifrata su Drive; le copie precedenti non verranno cancellate.\n' +
+    'L’altro PC non deve essere utilizzato durante questa operazione.\n\nProcedere?')) return;
+
+  const pass = prompt('Scegli la password del NUOVO backup cifrato su Drive (almeno 12 caratteri):');
+  if (pass === null) return;
+  if (pass.length < 12) throw Error('Password troppo corta (minimo 12 caratteri).');
+  const again = prompt('Ripeti la password del nuovo backup cifrato:');
+  if (again !== pass) throw Error('Le password non coincidono. Nessun file caricato.');
+  const encrypted = await encryptBackup(local, pass);
+  const cloudNow = await getLatest();
+  if (cloudNow.id !== latest.id || (latest.md5Checksum && cloudNow.md5Checksum !== latest.md5Checksum))
+    throw Error('Drive è cambiato prima della pubblicazione. Nessun caricamento eseguito.');
+  if (await fingerprint(await getLocal()) !== localHash)
+    throw Error('Archivio locale cambiato prima della pubblicazione. Nessun caricamento eseguito.');
+  assertReady();
+
+  const name = PREFIX + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+  const boundary = 'gsa_lab_' + crypto.randomUUID().replaceAll('-', '');
+  const metadata = JSON.stringify({name, mimeType:'application/json'});
+  const content = JSON.stringify(encrypted);
+  if (new Blob([content]).size > MAX_BYTES) throw Error('Backup cifrato oltre 20 MB. Nessun caricamento.');
+  const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + metadata + '\r\n' +
+    '--' + boundary + '\r\nContent-Type: application/json\r\n\r\n' + content + '\r\n--' + boundary + '--';
+  const res = await api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,md5Checksum', {
+    method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + boundary}, body
+  });
+  const created = await res.json();
+  const newest = await getLatest();
+  if (newest.id !== created.id) {
+    syncResult.textContent = 'ATTENZIONE: backup creato (' + created.name +
+      '), ma è presente una copia più recente. Non cambiare PC; verifica il conflitto.';
+    throw Error('Pubblicazione concorrente rilevata. Il dispositivo NON è allineato.');
+  }
+  await saveBase(newest, local);
+  try { await listFiles(); } catch (_) { /* l'elenco non è necessario per confermare il salvataggio */ }
+  syncResult.textContent = 'RISOLUZIONE E PUBBLICAZIONE COMPLETATE\n' + created.name +
+    '\nUn solo condominio: note riunite e nessun altro campo modificato rispetto a Drive.\n' +
+    'Backup cifrato precedente conservato. Prima di usare il PC di casa, ricevi il nuovo backup da Drive.';
+}
+
   function syncJob(fn) {
     return runJob(async () => {
       syncResult.textContent = 'Operazione in corso…';
@@ -371,6 +493,12 @@
   syncInit.addEventListener('click', () => syncJob(doSyncInit));
   syncPull.addEventListener('click', () => syncJob(doSyncPull));
   syncPush.addEventListener('click', () => syncJob(doSyncPush));
+  syncResolve.addEventListener('click', () => { if (!busy) resolveFile.click(); });
+  resolveFile.addEventListener('change', () => {
+    const file = resolveFile.files?.[0];
+    if (!file) return;
+    syncJob(async () => { try { await doSyncResolve(file); } finally { resolveFile.value = ''; } });
+  });
 
   async function checkSyncReadOnly() {
     assertReady();
