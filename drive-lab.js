@@ -33,6 +33,9 @@
   const mergeAnalyze = $('drive-lab-merge-analyze');
   const mergeDownload = $('drive-lab-merge-download');
   const mergeResult = $('drive-lab-merge-result');
+  const verifyFile = $('drive-lab-verify-file');
+  const verifyButton = $('drive-lab-verify-run');
+  const verifyResult = $('drive-lab-verify-result');
   let mergePreview = null; // Solo memoria della scheda; nessun dato in localStorage/Drive.
 
   let autoChecking = false;
@@ -56,6 +59,8 @@
     conflictButton.disabled = !connected || busy;
     mergeAnalyze.disabled = !connected || busy;
     mergeDownload.disabled = !connected || busy || !mergePreview;
+    verifyFile.disabled = !connected || busy;
+    verifyButton.disabled = !connected || busy || !verifyFile.files?.length;
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -73,6 +78,8 @@
     conflictResult.textContent = 'In attesa dell’analisi.';
     mergePreview = null;
     mergeResult.textContent = 'Drive scollegato. Nessuna proposta in memoria.';
+    verifyFile.value = '';
+    verifyResult.textContent = 'Drive scollegato. Nessun file verificato.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
@@ -530,6 +537,110 @@
   mergeDownload.addEventListener('click', () => runJob(async () => {
     try { await doMergeDownload(); }
     catch (err) { mergeResult.textContent += '\nDOWNLOAD INTERROTTO: ' + err.message + '\nNessun dato modificato.'; throw err; }
+  }));
+
+  // FASE 2C.5 — VERIFICA INDIPENDENTE, SOLO LETTURA.
+  // Non chiama importAtomic, metaSet, upload Drive o downloadText.
+  // Il campo 'updated' generato per un record unito non è deterministico
+  // tra due analisi; confrontiamo tutti gli altri campi, inclusi gli ID.
+  // La validità formale dei timestamp resta controllata da validateBackup.
+  async function fingerprintMergeContent(data) {
+    const canonical = {};
+    for (const name of names) {
+      canonical[name] = data[name].slice()
+        .sort((a,b) => a.id.localeCompare(b.id))
+        .map(record => {
+          const fields = {};
+          for (const key of Object.keys(record)) if (key !== 'updated') fields[key] = record[key];
+          return stableValue(fields);
+        });
+    }
+    const digest = await crypto.subtle.digest('SHA-256',
+      new TextEncoder().encode(JSON.stringify(canonical)));
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,'0')).join('');
+  }
+  function assertProposalName(file) {
+    if (!file || !/^GSA-2C4-PROPOSTA-FUSIONE-CIFRATA-[0-9TZ-]+\.json$/.test(file.name))
+      throw Error('Seleziona il file GSA-2C4-PROPOSTA-FUSIONE-CIFRATA-...json creato dalla FASE 2C.4.');
+    if (file.size <= 0 || file.size > MAX_BYTES)
+      throw Error('Dimensione proposta non valida (deve essere tra 1 byte e 20 MB).');
+  }
+  async function doVerifyProposal() {
+    assertReady();
+    const file = verifyFile.files?.[0];
+    assertProposalName(file);
+    if (!confirm('FASE 2C.5 — VERIFICA PROPOSTA CIFRATA\n\n' +
+      'Il file sarà decifrato solo in memoria e confrontato con PC, base storica e Drive.\n' +
+      'Potrebbero essere richieste tre password (proposta, base, Drive).\n' +
+      'NESSUNA importazione, pubblicazione o modifica. Continuare?')) {
+      verifyResult.textContent = 'Verifica annullata. Nessun dato modificato.';
+      return;
+    }
+    verifyResult.textContent = 'Verifica in corso. Nessun dato verrà modificato…';
+    const base = await metaGet(BASE_KEY);
+    if (!base?.id || !base?.hash)
+      throw Error('Base storica assente: impossibile verificare la proposta.');
+    const latest = await getLatest();
+    if (latest.id === base.id) throw Error('Drive coincide con la base: proposta non più verificabile in questo scenario.');
+    const local = await getLocal();
+    const localHash = await fingerprint(local);
+    let encrypted;
+    try { encrypted = JSON.parse(await file.text()); }
+    catch (_) { throw Error('Il file selezionato non è un JSON valido.'); }
+    if (encrypted?.format !== 'gsa-manager-encrypted-v1' || encrypted.algorithm !== 'AES-256-GCM' ||
+        encrypted.kdf !== 'PBKDF2-SHA256' || encrypted.iterations !== 310000)
+      throw Error('La proposta non è un backup cifrato GSA riconosciuto.');
+    const proposed = await decodeBackup(encrypted);
+    validateBackup(proposed);
+    if (proposed.format !== local.format || proposed.backupVersion !== local.backupVersion)
+      throw Error('La proposta non ha lo stesso formato/versione dell’archivio corrente.');
+    const baseData = await readRemote({id:base.id,name:base.name || '(base storica)'});
+    if (await fingerprint(baseData) !== base.hash)
+      throw Error('Base storica non corrispondente all’impronta salvata.');
+    const remote = await readRemote(latest);
+    const expected = buildMergeCandidate(baseData,local,remote);
+    const [expectedHash,proposedHash] = await Promise.all([
+      fingerprintMergeContent(expected.candidate),fingerprintMergeContent(proposed)
+    ]);
+    if (expectedHash !== proposedHash)
+      throw Error('PROPOSTA NON CORRISPONDENTE: i record/campi della proposta differiscono dalla fusione ricalcolata. NON importare.');
+    const [cloudNow,pcNow,baseNow] = await Promise.all([getLatest(),getLocal(),metaGet(BASE_KEY)]);
+    if (cloudNow.id !== latest.id ||
+        (latest.md5Checksum && cloudNow.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive è cambiato durante la verifica. Risultato scartato.');
+    if (await fingerprint(pcNow) !== localHash || baseNow?.id !== base.id || baseNow?.hash !== base.hash)
+      throw Error('PC o base sono cambiati durante la verifica. Risultato scartato.');
+    assertReady();
+    verifyResult.textContent = [
+      'VERIFICA PROPOSTA CIFRATA — SUPERATA (SOLA LETTURA)',
+      'File: ' + file.name,
+      'Base storica: ' + (base.name || base.id),
+      'Drive attuale: ' + latest.name,
+      'Record invariati: ' + expected.counts.same,
+      'Modifiche solo PC: ' + expected.counts.pc + ' · Solo Drive: ' + expected.counts.drive,
+      'Modifiche su campi distinti: ' + expected.counts.independent,
+      'Modifiche identiche: ' + expected.counts.equal,
+      ...expected.changes.slice(0,20),
+      'Impronta dei contenuti verificati: ' + proposedHash.slice(0,20) + '…',
+      'I CAMPI DELLA PROPOSTA COINCIDONO CON LA FUSIONE RICALCOLATA.',
+      'Le date di aggiornamento sono escluse dalla comparazione: potranno differire.',
+      'NESSUNA IMPORTAZIONE, PUBBLICAZIONE O MODIFICA ESEGUITA.',
+      'NON importare ancora il file: l’applicazione protetta è una fase successiva.'
+    ].join('\n');
+  }
+  verifyFile.addEventListener('change', () => {
+    verifyResult.textContent = verifyFile.files?.length
+      ? 'File selezionato: ' + verifyFile.files[0].name + '. Premi Verifica proposta.'
+      : 'In attesa del file cifrato.';
+    setControls();
+  });
+  verifyButton.addEventListener('click', () => runJob(async () => {
+    try { await doVerifyProposal(); }
+    catch (err) {
+      verifyResult.textContent = 'VERIFICA BLOCCATA: ' + err.message +
+        '\nNESSUNA IMPORTAZIONE, PUBBLICAZIONE O MODIFICA ESEGUITA.';
+      throw err;
+    }
   }));
 
   // FASE 2B — protocollo di hand-off, un solo PC alla volta.
