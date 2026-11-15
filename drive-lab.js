@@ -30,6 +30,11 @@
   const fieldResult = $('drive-lab-field-result');
   const conflictButton = $('drive-lab-conflict-analyze');
   const conflictResult = $('drive-lab-conflict-result');
+  const mergeAnalyze = $('drive-lab-merge-analyze');
+  const mergeDownload = $('drive-lab-merge-download');
+  const mergeResult = $('drive-lab-merge-result');
+  let mergePreview = null; // Solo memoria della scheda; nessun dato in localStorage/Drive.
+
   let autoChecking = false;
   let tokenClient = null;
   let accessToken = null;
@@ -49,6 +54,8 @@
     compareButton.disabled = !connected || busy;
     fieldButton.disabled = !connected || busy;
     conflictButton.disabled = !connected || busy;
+    mergeAnalyze.disabled = !connected || busy;
+    mergeDownload.disabled = !connected || busy || !mergePreview;
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -64,6 +71,8 @@
     compareResult.textContent = '';
     fieldResult.textContent = 'In attesa del confronto.';
     conflictResult.textContent = 'In attesa dell’analisi.';
+    mergePreview = null;
+    mergeResult.textContent = 'Drive scollegato. Nessuna proposta in memoria.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
@@ -371,6 +380,157 @@
     assertReady();
     conflictResult.textContent = threeWayReport(baseData, local, remote, baseFile, latest);
   }
+
+  // FASE 2C.4 — PROPOSTA CIFRATA DI FUSIONE. SOLO PREVIEW + DOWNLOAD LOCALE.
+  // Non esegue importAtomic, metaSet o POST Drive. Conflitti, assenze e record nuovi
+  // sono bloccati; per questa prima versione si uniscono solo campi semplici o
+  // oggetti/lista interi modificati da UN SOLO lato. Nessun "ultimo vince".
+  function buildMergeCandidate(baseData, local, remote) {
+    const counts = {same:0, pc:0, drive:0, independent:0, equal:0};
+    const changes = [];
+    const result = {
+      format: local.format,
+      backupVersion: local.backupVersion,
+      exported: new Date().toISOString(),
+      condomini:[], visite:[], classificazioni:[]
+    };
+    for (const name of names) {
+      const b = new Map(baseData[name].map(x => [x.id, x]));
+      const l = new Map(local[name].map(x => [x.id, x]));
+      const d = new Map(remote[name].map(x => [x.id, x]));
+      for (const id of [...new Set([...b.keys(), ...l.keys(), ...d.keys()])].sort()) {
+        const old = b.get(id), left = l.get(id), right = d.get(id);
+        if (!old || !left || !right)
+          throw Error('Record nuovo, eliminato o mancante: ' + name + '/' + id + '. Fusione non supportata: nessuna proposta creata.');
+        const merged = structuredClone(old);
+        const onlyPc = [], onlyDrive = [], bothEqual = [];
+        const keys = [...new Set([...Object.keys(old), ...Object.keys(left), ...Object.keys(right)])]
+          .filter(k => k !== 'id' && k !== 'updated').sort();
+        for (const k of keys) {
+          const pcChanged = !valueEqual(old[k], left[k]);
+          const driveChanged = !valueEqual(old[k], right[k]);
+          if (pcChanged && driveChanged && !valueEqual(left[k], right[k]))
+            throw Error('CONFLITTO sullo stesso campo: ' + name + '/' + id + ' — ' + (fieldLabels[k] || k) + '. Fusione bloccata.');
+          if (!pcChanged && !driveChanged) continue;
+          if (pcChanged && driveChanged) bothEqual.push(k);
+          else if (pcChanged) onlyPc.push(k);
+          else onlyDrive.push(k);
+          const source = pcChanged ? left : right;
+          if (Object.prototype.hasOwnProperty.call(source,k)) {
+            Object.defineProperty(merged,k,{value:structuredClone(source[k]),writable:true,configurable:true,enumerable:true});
+          } else delete merged[k];
+        }
+        const meaningfulPc = onlyPc.length + bothEqual.length > 0;
+        const meaningfulDrive = onlyDrive.length + bothEqual.length > 0;
+        if (meaningfulPc && meaningfulDrive) {
+          // Quando si combinano due rami, l'orario non attribuisce le modifiche.
+          // Timestamp nuovo solo per la futura importazione, non prova di origine.
+          merged.updated = new Date(Math.max(Date.now(),Date.parse(left.updated)+1000,Date.parse(right.updated)+1000)).toISOString();
+        } else if (meaningfulPc) merged.updated = left.updated;
+        else if (meaningfulDrive) merged.updated = right.updated;
+        else merged.updated = old.updated;
+        if (onlyPc.length && onlyDrive.length) counts.independent++;
+        else if (onlyPc.length) counts.pc++;
+        else if (onlyDrive.length) counts.drive++;
+        else if (bothEqual.length) counts.equal++;
+        else counts.same++;
+        if (onlyPc.length || onlyDrive.length || bothEqual.length) {
+          changes.push(name + '/' + String(left.nome || right.nome || id).slice(0,60) +
+            ': PC [' + onlyPc.map(k=>fieldLabels[k]||k).join(', ') +
+            ']; Drive [' + onlyDrive.map(k=>fieldLabels[k]||k).join(', ') +
+            ']; identici [' + bothEqual.map(k=>fieldLabels[k]||k).join(', ') + ']');
+        }
+        result[name].push(merged);
+      }
+    }
+    validateBackup(result);
+    return {candidate:result,counts,changes};
+  }
+  async function doMergeAnalyze() {
+    assertReady();
+    mergePreview = null;
+    mergeResult.textContent = 'Analisi in corso. Nessuna scrittura…';
+    const base = await metaGet(BASE_KEY);
+    if (!base?.id || !base?.hash) throw Error('Base storica non disponibile. Non reimpostarla con archivi divergenti.');
+    const latest = await getLatest();
+    if (latest.id === base.id) throw Error('Drive non ha modifiche rispetto alla base. Non serve una fusione.');
+    if (!confirm('FASE 2C.4 — ANTEPRIMA FUSIONE (SOLA LETTURA)\n\n' +
+      'Confronto PC casa, base verificata e Drive. Nessun dato verrà scritto.\n' +
+      'Le password dei backup potrebbero essere richieste due volte. Procedere?')) {
+      mergeResult.textContent = 'Analisi annullata. Nessun dato modificato.';
+      return;
+    }
+    const local = await getLocal();
+    const localHash = await fingerprint(local);
+    const baseData = await readRemote({id:base.id,name:base.name || '(base storica)'});
+    if (await fingerprint(baseData) !== base.hash)
+      throw Error('Impronta della base storica non corrispondente. Operazione bloccata.');
+    const remote = await readRemote(latest);
+    const remoteHash = await fingerprint(remote);
+    const proposal = buildMergeCandidate(baseData,local,remote);
+    const [latestNow, localNow, baseNow] = await Promise.all([getLatest(),getLocal(),metaGet(BASE_KEY)]);
+    if (latestNow.id !== latest.id || (latest.md5Checksum && latestNow.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive è cambiato durante l’analisi. Proposta scartata.');
+    if (await fingerprint(localNow) !== localHash || baseNow?.id !== base.id || baseNow?.hash !== base.hash)
+      throw Error('PC o base sono cambiati durante l’analisi. Proposta scartata.');
+    assertReady();
+    mergePreview = {candidate:proposal.candidate,counts:proposal.counts,changes:proposal.changes,
+      localHash,remoteHash,baseId:base.id,baseHash:base.hash,latestId:latest.id,latestMd5:latest.md5Checksum || ''};
+    mergeResult.textContent = [
+      'PROPOSTA DI FUSIONE PREPARATA — NON APPLICATA',
+      'Base: ' + (base.name || base.id),
+      'Drive: ' + latest.name,
+      'Record invariati: ' + proposal.counts.same,
+      'Solo PC: ' + proposal.counts.pc + ' · Solo Drive: ' + proposal.counts.drive,
+      'Modifiche a campi distinti: ' + proposal.counts.independent,
+      'Modifiche identiche su entrambi: ' + proposal.counts.equal,
+      'Conflitti/assenze: 0 (altrimenti operazione bloccata)',
+      ...proposal.changes.slice(0,20),
+      proposal.changes.length>20 ? 'Ulteriori record non visualizzati: ' + (proposal.changes.length-20) : '',
+      'Puoi scaricare una COPIA CIFRATA della proposta con il pulsante sottostante.',
+      'NESSUN DATO DEL PC O DI GOOGLE DRIVE È STATO MODIFICATO.'
+    ].filter(Boolean).join('\n');
+  }
+  async function doMergeDownload() {
+    assertReady();
+    const preview = mergePreview;
+    if (!preview) throw Error('Prima analizza la proposta di fusione.');
+    const [latest, local, base] = await Promise.all([getLatest(),getLocal(),metaGet(BASE_KEY)]);
+    if (latest.id !== preview.latestId || (preview.latestMd5 && latest.md5Checksum !== preview.latestMd5))
+      throw Error('Drive è cambiato. Rifai l’analisi prima di scaricare.');
+    if (await fingerprint(local) !== preview.localHash || base?.id !== preview.baseId || base?.hash !== preview.baseHash)
+      throw Error('PC o base sono cambiati. Rifai l’analisi.');
+    if (!confirm('SCARICARE UNA PROPOSTA CIFRATA?\n\n' +
+      'Verrà scaricato un file JSON cifrato che contiene i dati proposti.\n' +
+      'NON verrà importato sul PC e NON verrà caricato su Google Drive.\n' +
+      'Conserva i backup originali. Continuare?')) return;
+    const pass = prompt('Scegli una password per la PROPOSTA CIFRATA (almeno 12 caratteri):');
+    if (pass === null) return;
+    if (pass.length < 12) throw Error('Password troppo corta: minimo 12 caratteri.');
+    const again = prompt('Ripeti la password della proposta cifrata:');
+    if (again !== pass) throw Error('Password non coincidenti. Nessun file creato.');
+    const encrypted = await encryptBackup(preview.candidate,pass);
+    const [cloudNow, pcNow, baseNow] = await Promise.all([getLatest(),getLocal(),metaGet(BASE_KEY)]);
+    if (cloudNow.id !== preview.latestId || (preview.latestMd5 && cloudNow.md5Checksum !== preview.latestMd5) ||
+        await fingerprint(pcNow) !== preview.localHash || baseNow?.id !== preview.baseId || baseNow?.hash !== preview.baseHash)
+      throw Error('Stato modificato durante la cifratura: download bloccato. Rifai l’analisi.');
+    assertReady();
+    const content = JSON.stringify(encrypted);
+    if (new Blob([content]).size > MAX_BYTES) throw Error('Proposta cifrata troppo grande: limite 20 MB.');
+    const filename = 'GSA-2C4-PROPOSTA-FUSIONE-CIFRATA-' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
+    downloadText(content,filename);
+    mergeResult.textContent += '\n\nDOWNLOAD PROPOSTA CIFRATA AVVIATO: ' + filename +
+      '\nNESSUNA IMPORTAZIONE O PUBBLICAZIONE ESEGUITA. NON importare ancora questa proposta.';
+    mergePreview = null;
+  }
+  mergeAnalyze.addEventListener('click', () => runJob(async () => {
+    try { await doMergeAnalyze(); }
+    catch (err) { mergePreview=null; mergeResult.textContent = 'PROPOSTA BLOCCATA: ' + err.message + '\nNessun dato modificato.'; throw err; }
+  }));
+  mergeDownload.addEventListener('click', () => runJob(async () => {
+    try { await doMergeDownload(); }
+    catch (err) { mergeResult.textContent += '\nDOWNLOAD INTERROTTO: ' + err.message + '\nNessun dato modificato.'; throw err; }
+  }));
 
   // FASE 2B — protocollo di hand-off, un solo PC alla volta.
   // Le snapshot sono immutabili (nuovo file per ogni pubblicazione).
