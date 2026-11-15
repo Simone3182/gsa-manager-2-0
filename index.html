@@ -27,7 +27,7 @@
 <body><div class="privacy-overlay" id="privacy-lock" style="display:none"><div class="privacy-card"><h1>🔐 GSA Manager</h1><p class="privacy-message">Archivio bloccato per proteggere i dati.</p><button class="primary" id="privacy-unlock">Sblocca archivio</button><p class="muted">La password non viene salvata nel browser.</p></div></div><div class="layout"><aside><div class="brand"><span>🛡</span><div><b>GSA Manager</b><small>Studio Geom. Simone Montanari</small></div></div>
 <nav><button class="active" data-page="dashboard">⌂ Dashboard</button><button data-page="condomini">▦ Condomini</button><button data-page="sopralluoghi">☷ Sopralluoghi</button><button data-page="archivio">▤ Verbali</button><button data-page="backup">⇄ Backup e trasferimento</button></nav><div aria-live="polite" class="backup-indicator" id="backup-indicator">Verifica stato backup…</div>
 <div class="asidefoot">LP0 · Bozze e documentazione informativa<br/><small>Ambiente di prova isolato · 2.0 LAB</small></div></aside>
-<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2C.5 + Dashboard a tendina · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill">● Offline-ready</span></header>
+<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2C.6 + Dashboard a tendina · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill">● Offline-ready</span></header>
 <section aria-label="Backup cifrati su Google Drive" id="drive-lab-panel" style="background:#eaf4ff;border:1px solid #9dc6ea;border-radius:9px;padding:13px 16px;margin-bottom:12px">
 <div style="font-weight:700;color:#12304a">Google Drive — backup cifrati (LAB)</div>
 <p id="drive-lab-status" role="status" style="margin:8px 0;color:#12304a">Non collegato. Nessun dato trasferito.</p>
@@ -97,11 +97,23 @@
 <small>Solo dati di prova. Non importa, non pubblica, non sostituisce backup o record. Le password non vengono salvate. La verifica non autorizza ancora l'applicazione della fusione.</small>
 </section></details>
 
+<details class="gsa-phase-fold" data-phase-key="2c6"><summary>FASE 2C.6 — Applicazione locale protetta (LAB)</summary><section aria-label="Applicazione locale protetta della fusione" style="margin-top:12px;padding:12px;border:2px solid #a36f36;border-radius:8px;background:#fff9ef">
+<p><b>ATTENZIONE: questa fase modifica i record del SOLO PC attuale.</b> Non pubblica nulla su Google Drive e non aggiorna il punto di partenza della sincronizzazione. Dopo l'applicazione non usare le funzioni manuali 2B: la futura FASE 2C.7 dovrà gestire la pubblicazione protetta. Solo dati fittizi.</p>
+<p>Servono <b>due file cifrati</b>: la proposta 2C.4 già verificata e un backup locale <b>esattamente corrispondente</b> allo stato attuale di questo PC, conservato anche fuori dal programma. Prima della scrittura vengono ricontrollati la base storica, Drive, il PC e tutti i campi della fusione.</p>
+<div style="display:flex;flex-direction:column;gap:10px">
+<label><b>1. Proposta cifrata FASE 2C.4 (.json)</b><input id="drive-lab-apply-proposal" type="file" accept=".json,application/json" /></label>
+<label><b>2. Backup cifrato di sicurezza del PC casa (.json)</b><input id="drive-lab-apply-backup" type="file" accept=".json,application/json" /></label>
+<div><button id="drive-lab-apply-run" type="button" disabled>3. Verifica e applica SOLO sul PC (con conferme)</button></div>
+</div>
+<pre id="drive-lab-apply-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">In attesa dei due file cifrati. Nessuna scrittura.</pre>
+<small>Se Drive cambia, il backup non corrisponde o compare un conflitto, l'operazione si blocca. Nessuna password viene salvata. Conserva sempre tutti i backup originali.</small>
+</section></details>
+
 <div aria-live="polite" id="drive-lab-files" style="margin-top:12px"></div>
 </div>
 <small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
 </section><div id="content"></div></main></div><div id="toast" role="status"></div>
-<script async="" defer="" src="https://accounts.google.com/gsi/client"></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-11"></script><script id="gsa-dashboard-accordion-state">
+<script async="" defer="" src="https://accounts.google.com/gsi/client"></script><script src="./app.js?v=2.0-lab-1"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-12"></script><script id="gsa-dashboard-accordion-state">
 /* Salva soltanto lo stato aperto/chiuso delle fasi; mai password o dati GSA. */
 (() => {
   'use strict';

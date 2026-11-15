@@ -36,6 +36,10 @@
   const verifyFile = $('drive-lab-verify-file');
   const verifyButton = $('drive-lab-verify-run');
   const verifyResult = $('drive-lab-verify-result');
+  const applyProposalFile = $('drive-lab-apply-proposal');
+  const applyBackupFile = $('drive-lab-apply-backup');
+  const applyButton = $('drive-lab-apply-run');
+  const applyResult = $('drive-lab-apply-result');
   let mergePreview = null; // Solo memoria della scheda; nessun dato in localStorage/Drive.
 
   let autoChecking = false;
@@ -61,6 +65,9 @@
     mergeDownload.disabled = !connected || busy || !mergePreview;
     verifyFile.disabled = !connected || busy;
     verifyButton.disabled = !connected || busy || !verifyFile.files?.length;
+    applyProposalFile.disabled = !connected || busy;
+    applyBackupFile.disabled = !connected || busy;
+    applyButton.disabled = !connected || busy || !applyProposalFile.files?.length || !applyBackupFile.files?.length;
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -80,6 +87,9 @@
     mergeResult.textContent = 'Drive scollegato. Nessuna proposta in memoria.';
     verifyFile.value = '';
     verifyResult.textContent = 'Drive scollegato. Nessun file verificato.';
+    applyProposalFile.value = '';
+    applyBackupFile.value = '';
+    applyResult.textContent = 'Drive scollegato. Nessuna applicazione eseguita.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
@@ -643,6 +653,171 @@
     }
   }));
 
+  // FASE 2C.6 — applicazione LOCALE e atomica dei soli record variati.
+  // Non carica su Drive, non elimina record, non aggiorna la base 2B.
+  // Richiede prova cifrata di backup identica al PC attuale e proposta verificata
+  // ricalcolando in modo indipendente i tre rami. Non accetta conflitti/nuovi record.
+  const PENDING_MERGE_KEY = 'labMergePendingV1';
+  function withoutUpdated(record) {
+    const clean = {};
+    for (const k of Object.keys(record)) if (k !== 'updated') clean[k] = record[k];
+    return stableValue(clean);
+  }
+  async function readApplyEncryptedFile(file, description) {
+    if (!file || file.size <= 0 || file.size > MAX_BYTES)
+      throw Error(description + ': file assente, vuoto o oltre 20 MB.');
+    let encrypted;
+    try { encrypted = JSON.parse(await file.text()); }
+    catch (_) { throw Error(description + ': JSON non valido.'); }
+    if (encrypted?.format !== 'gsa-manager-encrypted-v1' || encrypted.algorithm !== 'AES-256-GCM' ||
+        encrypted.kdf !== 'PBKDF2-SHA256' || encrypted.iterations !== 310000 ||
+        !['salt','iv','cipher'].every(k => typeof encrypted[k] === 'string' && !!encrypted[k]))
+      throw Error(description + ': non è un backup GSA cifrato riconosciuto.');
+    const decoded = await decodeBackup(encrypted);
+    validateBackup(decoded);
+    return decoded;
+  }
+  function sameFileIdentity(a,b) {
+    return a.id === b.id && (!a.md5Checksum || !b.md5Checksum || a.md5Checksum === b.md5Checksum);
+  }
+  async function doApplyMerge() {
+    assertReady();
+    const proposalFile = applyProposalFile.files?.[0];
+    const backupFile = applyBackupFile.files?.[0];
+    assertProposalName(proposalFile);
+    if (!backupFile || !/^gsa-manager-backup-cifrato-.*\.json$/i.test(backupFile.name))
+      throw Error('Seleziona un backup locale cifrato esportato dalla sezione Backup del GSA.');
+    if (await metaGet(PENDING_MERGE_KEY))
+      throw Error('Una fusione locale è già in attesa di pubblicazione. Non applicarla una seconda volta.');
+    if (!confirm('FASE 2C.6 — SOLO DATI DI PROVA\n\n' +
+      'Questa operazione può MODIFICARE i record del PC CASA.\n' +
+      'NON aggiornerà Google Drive.\n' +
+      'Sono obbligatori il backup locale identico e la proposta verificata.\n' +
+      'Non usare altre schede GSA o altri dispositivi durante l’operazione.\n\n' +
+      'Vuoi iniziare i controlli?')) return;
+    applyResult.textContent = 'Controlli in corso: nessuna scrittura eseguita…';
+    const base = await metaGet(BASE_KEY);
+    if (!base?.id || !base?.hash) throw Error('Base storica non disponibile.');
+    const latest = await getLatest();
+    if (latest.id === base.id) throw Error('Drive coincide con la base: non è il caso previsto per questa fusione.');
+    const local = await getLocal();
+    const localHash = await fingerprint(local);
+    const backup = await readApplyEncryptedFile(backupFile,'Backup di sicurezza');
+    if (await fingerprint(backup) !== localHash)
+      throw Error('Il backup di sicurezza NON corrisponde ai dati attuali del PC. Esporta e conserva un backup cifrato aggiornato.');
+    const proposed = await readApplyEncryptedFile(proposalFile,'Proposta di fusione');
+    if (proposed.format !== local.format || proposed.backupVersion !== local.backupVersion)
+      throw Error('Formato/versione della proposta non corrispondente al PC.');
+    const baseData = await readRemote({id:base.id,name:base.name || 'Base storica'});
+    if (await fingerprint(baseData) !== base.hash)
+      throw Error('Impronta della base storica non corrispondente.');
+    const remote = await readRemote(latest);
+    const expected = buildMergeCandidate(baseData,local,remote);
+    const [expectedContentHash, proposedContentHash] = await Promise.all([
+      fingerprintMergeContent(expected.candidate),fingerprintMergeContent(proposed)
+    ]);
+    if (expectedContentHash !== proposedContentHash)
+      throw Error('La proposta NON coincide con la fusione ricalcolata. Applicazione bloccata.');
+    if (expected.counts.independent < 1)
+      throw Error('Non risultano modifiche indipendenti da fondere. Applicazione bloccata.');
+    // Il perimetro deve restare identico: nessun nuovo ID e nessuna eliminazione.
+    for (const name of names) {
+      const a = local[name].map(r=>r.id).sort();
+      const b = expected.candidate[name].map(r=>r.id).sort();
+      if (!valueEqual(a,b)) throw Error('Record aggiunti/eliminati: fusione bloccata ('+name+').');
+    }
+    const changes = {};
+    let modified = 0;
+    for (const name of names) {
+      const existing = new Map(local[name].map(x=>[x.id,x]));
+      changes[name] = [];
+      for (const proposedRecord of expected.candidate[name]) {
+        const old = existing.get(proposedRecord.id);
+        if (valueEqual(withoutUpdated(old),withoutUpdated(proposedRecord))) continue;
+        const record = structuredClone(proposedRecord);
+        // Assicura che l'importazione non scarti un record per timestamp vecchio.
+        const ts = Math.max(Date.now(), (Date.parse(old.updated)||0)+1000,
+          (Date.parse(record.updated)||0)+1000);
+        record.updated = new Date(ts).toISOString();
+        changes[name].push(record);
+        modified++;
+      }
+    }
+    if (!modified) throw Error('Nessun record da aggiornare: fusione non necessaria.');
+    // Tutte le cifrature avvengono PRIMA della transazione IndexedDB.
+    const prepared = {};
+    for (const name of names) prepared[name] = await Promise.all(changes[name].map(r=>wrapRecord(name,r)));
+    const [latestNow, localNow, baseNow, pendingNow] = await Promise.all([
+      getLatest(),getLocal(),metaGet(BASE_KEY),metaGet(PENDING_MERGE_KEY)
+    ]);
+    if (!sameFileIdentity(latest,latestNow) || await fingerprint(localNow) !== localHash ||
+        baseNow?.id !== base.id || baseNow?.hash !== base.hash || pendingNow)
+      throw Error('PC, Drive o base modificati durante i controlli. Applicazione annullata.');
+    assertReady();
+    if (!confirm('VERIFICA COMPLETATA\n\n' +
+      'Backup cifrato locale: corrispondente.\n' +
+      'Proposta cifrata: corrispondente.\n' +
+      'Record da aggiornare SOLO su questo PC: '+modified+'\n' +
+      'Conflitti: 0.\nGoogle Drive NON sarà modificato.\n\n' +
+      'Confermi di voler APPLICARE la fusione sul PC CASA?')) {
+      applyResult.textContent = 'Applicazione annullata. Nessun dato modificato.';
+      return;
+    }
+    const phrase = prompt('ULTIMA CONFERMA: scrivi esattamente APPLICA per modificare il SOLO PC casa.');
+    if (phrase !== 'APPLICA') {
+      applyResult.textContent = 'Conferma non valida o annullata. Nessun dato modificato.';
+      return;
+    }
+    // Ultimo controllo immediatamente prima della transazione.
+    const [cloudFinal, pcFinal, baseFinal, pendingFinal] = await Promise.all([
+      getLatest(),getLocal(),metaGet(BASE_KEY),metaGet(PENDING_MERGE_KEY)
+    ]);
+    if (!sameFileIdentity(latest,cloudFinal) || await fingerprint(pcFinal) !== localHash ||
+        baseFinal?.id !== base.id || baseFinal?.hash !== base.hash || pendingFinal)
+      throw Error('Modifiche concorrenti rilevate all’ultimo controllo. Nessuna scrittura.');
+    assertReady();
+    const pending = {baseId:base.id, baseHash:base.hash, remoteId:latest.id,
+      remoteMd5:latest.md5Checksum||'', localHashBefore:localHash,
+      contentHash:expectedContentHash, at:new Date().toISOString(), records:modified};
+    await new Promise((resolve,reject)=>{
+      const tx = db.transaction([...names,'meta'],'readwrite');
+      for (const name of names) for (const record of prepared[name]) tx.objectStore(name).put(record);
+      const meta = tx.objectStore('meta');
+      meta.put({key:'lastChange',value:new Date().toISOString()});
+      meta.put({key:PENDING_MERGE_KEY,value:pending});
+      tx.oncomplete = resolve;
+      tx.onabort = ()=>reject(tx.error||Error('Transazione annullata.'));
+      tx.onerror = ()=>reject(tx.error||Error('Errore nella transazione.'));
+    });
+    // Se la verifica fallisce, non eseguire altre operazioni: backup originale conservato.
+    const after = await getLocal();
+    if (await fingerprintMergeContent(after) !== expectedContentHash)
+      throw Error('ATTENZIONE: verifica successiva alla scrittura non riuscita. Fermati e conserva tutti i backup.');
+    applyResult.textContent = [
+      'FUSIONE LOCALE APPLICATA E VERIFICATA — SOLO PC CASA',
+      'Record aggiornati: '+modified,
+      'Campi di PC casa e Drive riuniti nella copia LOCALE.',
+      'Impronta contenuti: '+expectedContentHash.slice(0,20)+'…',
+      'NESSUN FILE PUBBLICATO SU GOOGLE DRIVE.',
+      'PUNTO DI PARTENZA NON AGGIORNATO: sincronizzazione in sospeso.',
+      'NON usare Ricevi da Drive, Pubblica su Drive o Importa backup.',
+      'Conserva backup e proposta cifrata. La pubblicazione richiede una fase separata.'
+    ].join('\n');
+    await show('dashboard');
+  }
+  for (const el of [applyProposalFile,applyBackupFile]) el.addEventListener('change',()=>{
+    applyResult.textContent = 'File selezionati. L’applicazione richiede verifica e conferme esplicite.';
+    setControls();
+  });
+  applyButton.addEventListener('click',()=>runJob(async()=>{
+    try { await doApplyMerge(); }
+    catch(err) {
+      applyResult.textContent = 'APPLICAZIONE INTERROTTA: '+err.message+'\n' +
+        'Non ripetere l’operazione se è avvenuta una scrittura. Conserva i backup e verifica lo stato.';
+      throw err;
+    }
+  }));
+
   // FASE 2B — protocollo di hand-off, un solo PC alla volta.
   // Le snapshot sono immutabili (nuovo file per ogni pubblicazione).
   // L'ID del backup cloud + checksum costituisce il riferimento di base.
@@ -707,6 +882,7 @@
     return entry;
   }
   async function doSyncInit() {
+    if (await metaGet(PENDING_MERGE_KEY)) throw Error('Fusione locale in attesa: sincronizzazione manuale bloccata.');
     assertReady();
     const latest = await getLatest();
     const local = await getLocal();
@@ -729,6 +905,7 @@
       '\nArchivio locale identico al backup Drive. Nessun dato modificato.\nOra potrai pubblicare modifiche future o ricevere aggiornamenti.';
   }
   async function doSyncPull() {
+    if (await metaGet(PENDING_MERGE_KEY)) throw Error('Fusione locale in attesa: sincronizzazione manuale bloccata.');
     assertReady();
     const latest = await getLatest();
     const base = await metaGet(BASE_KEY);
@@ -778,6 +955,7 @@
       ' · Invariati: ' + stats.ignorati + '\nArchivi equivalenti. Conserva i backup cifrati.';
   }
   async function doSyncPush() {
+    if (await metaGet(PENDING_MERGE_KEY)) throw Error('Fusione locale in attesa: sincronizzazione manuale bloccata.');
     assertReady();
     const base = await metaGet(BASE_KEY);
     if (!base) throw Error('Prima usa «Allinea punto di partenza» con archivi identici.');
@@ -869,6 +1047,7 @@ function inspectReconciledNotes(local, remote, base) {
 }
 
 async function doSyncResolve(backupFile) {
+    if (await metaGet(PENDING_MERGE_KEY)) throw Error('Fusione locale in attesa: sincronizzazione manuale bloccata.');
   assertReady();
   if (!backupFile || backupFile.size > MAX_BYTES)
     throw Error('Seleziona il backup cifrato e verificato di questo PC (massimo 20 MB).');
