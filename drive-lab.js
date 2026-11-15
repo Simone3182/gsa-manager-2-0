@@ -40,6 +40,12 @@
   const applyBackupFile = $('drive-lab-apply-backup');
   const applyButton = $('drive-lab-apply-run');
   const applyResult = $('drive-lab-apply-result');
+  const publishBackupFile = $('drive-lab-publish-backup');
+  const publishCheckButton = $('drive-lab-publish-check');
+  const publishRunButton = $('drive-lab-publish-run');
+  const publishResult = $('drive-lab-publish-result');
+  let publishPreview = null; // Solo in RAM, mai password o dati in chiaro memorizzati.
+
   let mergePreview = null; // Solo memoria della scheda; nessun dato in localStorage/Drive.
 
   let autoChecking = false;
@@ -68,6 +74,9 @@
     applyProposalFile.disabled = !connected || busy;
     applyBackupFile.disabled = !connected || busy;
     applyButton.disabled = !connected || busy || !applyProposalFile.files?.length || !applyBackupFile.files?.length;
+    publishBackupFile.disabled = !connected || busy;
+    publishCheckButton.disabled = !connected || busy || !publishBackupFile.files?.length;
+    publishRunButton.disabled = !connected || busy || !publishPreview;
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -90,6 +99,9 @@
     applyProposalFile.value = '';
     applyBackupFile.value = '';
     applyResult.textContent = 'Drive scollegato. Nessuna applicazione eseguita.';
+    publishPreview = null;
+    publishBackupFile.value = '';
+    publishResult.textContent = 'Drive scollegato. Nessuna pubblicazione eseguita.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
     setControls();
@@ -816,6 +828,151 @@
         'Non ripetere l’operazione se è avvenuta una scrittura. Conserva i backup e verifica lo stato.';
       throw err;
     }
+  }));
+
+  // FASE 2C.7 — pubblicazione della fusione locale già verificata.
+  // Non modifica record, non cancella snapshot e non memorizza password.
+  // La copia inviata è ESATTAMENTE il backup cifrato 264 verificato, senza ricifrare.
+  async function checkMergePublishState(expectedPreview=null) {
+    assertReady();
+    const pending = await metaGet(PENDING_MERGE_KEY);
+    if (!pending?.remoteId || !pending?.baseId || !pending?.contentHash)
+      throw Error('Nessuna fusione 2C.6 in attesa. Non usare questa funzione per pubblicazioni ordinarie.');
+    const [base, latest, local] = await Promise.all([metaGet(BASE_KEY), getLatest(), getLocal()]);
+    if (!base || base.id !== pending.baseId || base.hash !== pending.baseHash)
+      throw Error('Base storica cambiata. Pubblicazione bloccata.');
+    if (latest.id !== pending.remoteId ||
+        (pending.remoteMd5 && latest.md5Checksum && pending.remoteMd5 !== latest.md5Checksum))
+      throw Error('Google Drive è cambiato dopo la fusione locale. NON pubblicare: serve una nuova verifica.');
+    const contentHash = await fingerprintMergeContent(local);
+    if (contentHash !== pending.contentHash)
+      throw Error('I contenuti del PC sono cambiati rispetto alla fusione 2C.6. Pubblicazione bloccata.');
+    if (!hasAllIds(local, base.ids))
+      throw Error('Record della base mancanti sul PC. Pubblicazione bloccata.');
+    const localHash = await fingerprint(local);
+    if (expectedPreview && (localHash !== expectedPreview.localHash ||
+        latest.id !== expectedPreview.remoteId ||
+        base.id !== expectedPreview.baseId ||
+        pending.contentHash !== expectedPreview.contentHash))
+      throw Error('Stato modificato dopo la verifica: rifai il controllo.');
+    return {pending,base,latest,local,localHash,contentHash};
+  }
+  async function checkMergePublish() {
+    publishPreview = null;
+    setControls();
+    const file = publishBackupFile.files?.[0];
+    if (!file || !/^gsa-manager-backup-cifrato-.*\.json$/i.test(file.name))
+      throw Error('Seleziona il backup cifrato GSA esportato DOPO la fusione locale.');
+    if (file.size > MAX_BYTES) throw Error('Backup cifrato oltre 20 MB: pubblicazione bloccata.');
+    publishResult.textContent = 'Verifica in corso. Nessun caricamento su Drive…';
+    const before = await checkMergePublishState();
+    const backup = await readApplyEncryptedFile(file, 'Backup post-fusione');
+    if (await fingerprint(backup) !== before.localHash)
+      throw Error('Il backup selezionato NON coincide con lo stato attuale del PC casa. Esporta un nuovo backup cifrato.');
+    const encryptedText = await file.text();
+    if (new Blob([encryptedText]).size > MAX_BYTES) throw Error('Backup troppo grande.');
+    const fileDigest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(encryptedText));
+    const fileHash = Array.from(new Uint8Array(fileDigest),b=>b.toString(16).padStart(2,'0')).join('');
+    const after = await checkMergePublishState();
+    if (before.localHash !== after.localHash || !sameFileIdentity(before.latest,after.latest))
+      throw Error('Stato cambiato durante la verifica. Nessuna pubblicazione.');
+    publishPreview = {localHash:after.localHash,remoteId:after.latest.id,baseId:after.base.id,
+      contentHash:after.contentHash,fileHash,fileName:file.name,encryptedText};
+    publishResult.textContent = [
+      'VERIFICA SUPERATA — NESSUNA PUBBLICAZIONE ESEGUITA',
+      'Backup cifrato: '+file.name,
+      'Backup identico ai record attuali del PC casa.',
+      'Fusione 2C.6 confermata; contenuti invariati.',
+      'Google Drive non modificato dalla fusione; versione remota attesa presente.',
+      'Record: '+after.local.condomini.length+' condomini, '+after.local.visite.length+' sopralluoghi, '+after.local.classificazioni.length+' classificazioni.',
+      'Il pulsante 3 creerà una NUOVA copia cifrata su Drive.',
+      'NON usare contemporaneamente il PC ufficio.'
+    ].join('\n');
+    setControls();
+  }
+  async function publishMerge() {
+    assertReady();
+    const preview = publishPreview;
+    if (!preview) throw Error('Prima esegui la verifica del backup post-fusione.');
+    const file = publishBackupFile.files?.[0];
+    if (!file || file.name !== preview.fileName) throw Error('File cambiato: ripeti la verifica.');
+    const content = await file.text();
+    const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(content));
+    const digestHex = Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+    if (digestHex !== preview.fileHash || content !== preview.encryptedText)
+      throw Error('File cifrato cambiato dopo la verifica. Pubblicazione bloccata.');
+    const before = await checkMergePublishState(preview);
+    if (!confirm('FASE 2C.7 — PUBBLICAZIONE PROTETTA (LAB)\n\n'+
+      'Verrà creata UNA NUOVA copia cifrata su Google Drive.\n'+
+      'Le copie precedenti non saranno cancellate o sovrascritte.\n'+
+      'Il PC ufficio NON verrà aggiornato automaticamente.\n'+
+      'Hai conservato i backup locali e lasciato spento il GSA dell’altro PC?')) return;
+    const phrase = prompt('ULTIMA CONFERMA: scrivi esattamente PUBBLICA per inviare il backup cifrato su Google Drive.');
+    if (phrase !== 'PUBBLICA') {
+      publishResult.textContent = 'Conferma non valida o annullata. Nessun caricamento avviato.';
+      return;
+    }
+    const last = await checkMergePublishState(preview);
+    if (!sameFileIdentity(before.latest,last.latest) || before.localHash !== last.localHash)
+      throw Error('PC o Drive modificati durante la conferma. Nessun caricamento avviato.');
+    const name = PREFIX + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
+    const boundary = 'gsa_lab_' + crypto.randomUUID().replaceAll('-','');
+    const metadata = JSON.stringify({name,mimeType:'application/json'});
+    const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n'+
+      '--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+content+'\r\n--'+boundary+'--';
+    // Il caricamento non è atomico con l'aggiornamento IndexedDB: in caso di errore,
+    // conserviamo il flag pending e NON ripetiamo automaticamente.
+    publishResult.textContent = 'Caricamento cifrato in corso… NON chiudere la pagina.';
+    publishPreview = null; setControls();
+    const res = await api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,md5Checksum',{
+      method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body
+    });
+    const created = await res.json();
+    if (!created.id || created.name !== name) throw Error('Risposta Drive non verificabile. NON ripetere il caricamento: controlla l’elenco.');
+    const latest = await getLatest();
+    if (latest.id !== created.id) throw Error('Drive mostra una copia più recente differente. NON ripetere il caricamento.');
+    // Verifica byte-per-byte il contenuto cifrato effettivamente archiviato.
+    const checkRes = await api('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(created.id)+'?alt=media');
+    if (await checkRes.text() !== content)
+      throw Error('Contenuto remoto diverso dal backup selezionato. Base NON aggiornata. Fermarsi.');
+    // Ricontrollo locale prima di confermare la nuova base.
+    const pcNow = await getLocal();
+    if (await fingerprint(pcNow) !== preview.localHash)
+      throw Error('Archivio locale cambiato durante il caricamento. Base NON aggiornata. Fermarsi.');
+    const baseNow = await metaGet(BASE_KEY);
+    const pendingNow = await metaGet(PENDING_MERGE_KEY);
+    if (baseNow?.id !== preview.baseId || pendingNow?.contentHash !== preview.contentHash)
+      throw Error('Base o stato fusione cambiati. Base NON aggiornata. Fermarsi.');
+    const entry = {id:created.id,md5:created.md5Checksum||latest.md5Checksum||'',name:created.name,
+      hash:preview.localHash,ids:idMap(pcNow),at:new Date().toISOString()};
+    await new Promise((resolve,reject)=>{
+      const tx = db.transaction('meta','readwrite');
+      tx.objectStore('meta').put({key:BASE_KEY,value:entry});
+      tx.objectStore('meta').delete(PENDING_MERGE_KEY);
+      tx.oncomplete=resolve;
+      tx.onabort=()=>reject(tx.error||Error('Aggiornamento base annullato.'));
+      tx.onerror=()=>reject(tx.error||Error('Errore aggiornamento base.'));
+    });
+    publishResult.textContent = 'PUBBLICAZIONE PROTETTA COMPLETATA\n'+created.name+
+      '\nNuova copia cifrata verificata su Drive. Nessun backup precedente eliminato.'+
+      '\nBase di sincronizzazione aggiornata SOLO su questo PC.'+
+      '\nPC ufficio NON aggiornato: prima di lavorarci, ricevi la nuova copia con backup di sicurezza.';
+    try { await listFiles(); } catch (_) { /* La pubblicazione e la base sono già confermate. */ }
+    void autoCheck();
+  }
+  publishBackupFile.addEventListener('change',()=>{
+    publishPreview=null;
+    publishResult.textContent='Backup selezionato. Esegui prima la verifica di sicurezza.';
+    setControls();
+  });
+  publishCheckButton.addEventListener('click',()=>runJob(async()=>{
+    try { await checkMergePublish(); }
+    catch(e) { publishPreview=null; publishResult.textContent='VERIFICA BLOCCATA: '+e.message+'\nNessun caricamento eseguito.'; throw e; }
+  }));
+  publishRunButton.addEventListener('click',()=>runJob(async()=>{
+    try { await publishMerge(); }
+    catch(e) { publishPreview=null; publishResult.textContent='PUBBLICAZIONE NON CONFERMATA: '+e.message+
+      '\nSe un upload era in corso, NON ripetere. Controlla l’elenco Drive e conserva tutti i backup.'; throw e; }
   }));
 
   // FASE 2B — protocollo di hand-off, un solo PC alla volta.

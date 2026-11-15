@@ -181,7 +181,21 @@ function select(label,key,opts,val){return `<div class="field"><label>${label}</
 function values(form){return Object.fromEntries(new FormData(form).entries())}
 function heading(t,sub){$("#heading").textContent=t;$("#subheading").textContent=sub||"GSA Manager · LP0"}
 async function show(p=page,id){if(!vaultReady)return;page=p;current=id||null;document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===p));let cs=await all("condomini"),vs=await all("visite"),cls=await all("classificazioni");await updateBackupIndicator(cs.length+vs.length+cls.length);if(!vaultReady)return;
-if(p==="dashboard"){heading("Dashboard","Panoramica attività e documenti");$("#content").innerHTML=`<div class="cards"><div class="card"><div class="metric">${cs.length}</div><span class="muted">Condomìni</span></div><div class="card"><div class="metric">${vs.length}</div><span class="muted">Sopralluoghi</span></div><div class="card"><div class="metric">${vs.filter(v=>v.stato==="definitivo").length}</div><span class="muted">Verbali definitivi</span></div></div><div class="toolbar">${btn("+ Nuovo condominio","newc","primary")}${btn("+ Nuovo sopralluogo","newv")}</div><div class="panel"><h2>Ultimi sopralluoghi</h2>${vs.slice().sort((a,b)=>b.updated.localeCompare(a.updated)).slice(0,7).map(v=>`<div class="item"><div><b>${esc(cs.find(c=>c.id===v.condominioId)?.nome||"Condominio")}</b><small>${esc(v.data)} · ${esc(v.stato)}</small></div>${btn("Apri","editv:"+v.id)}</div>`).join("")||'<p>Nessun sopralluogo ancora registrato.</p>'}</div>`}
+if(p==="dashboard"){
+ heading("Dashboard","Panoramica attività e documenti · sola consultazione");
+ const finalVisits=vs.filter(v=>v.stato==="definitivo");
+ const issued=[
+   ...finalVisits.map(v=>({when:v.updated||v.data||"",data:v.data||"",name:cs.find(c=>c.id===v.condominioId)?.nome||"Condominio",type:"Verbale sopralluogo definitivo"})),
+   ...cls.map(c=>({when:c.updated||c.data||"",data:c.data||"",name:c.condominio?.nome||cs.find(x=>x.id===c.condominioId)?.nome||"Condominio",type:"Verbale di classificazione"}))
+ ].sort((a,b)=>b.when.localeCompare(a.when)).slice(0,7);
+ const latestVisits=vs.slice().sort((a,b)=>(b.updated||"").localeCompare(a.updated||"")).slice(0,7);
+ const row=(name,detail)=>`<div class="item"><div><b>${esc(name)}</b><small>${esc(detail)}</small></div></div>`;
+ $("#content").innerHTML=`
+  <div class="panel gsa-overview-heading"><div><h2>Panoramica GSA</h2><p>Riepilogo in sola lettura dello studio</p></div><img src="./logo_montanari.png" alt="Logo Geom. Simone Montanari" loading="lazy"></div>
+  <div class="cards"><div class="card"><div class="metric">${cs.length}</div><span class="muted">Condomìni</span></div><div class="card"><div class="metric">${vs.length}</div><span class="muted">Sopralluoghi</span></div><div class="card"><div class="metric">${finalVisits.length}</div><span class="muted">Verbali definitivi</span></div></div>
+  <div class="panel gsa-overview-list"><h2>Ultimi sopralluoghi</h2>${latestVisits.map(v=>row(cs.find(c=>c.id===v.condominioId)?.nome||"Condominio",`${v.data||"Data non indicata"} · ${v.stato||"Bozza"}`)).join("")||'<p>Nessun sopralluogo ancora registrato.</p>'}</div>
+  <div class="panel gsa-overview-list"><h2>Ultimi verbali emessi</h2>${issued.map(v=>row(v.name,`${v.data||"Data non indicata"} · ${v.type}`)).join("")||'<p>Nessun verbale ancora emesso.</p>'}</div>`;
+}
 else if(p==="condomini"){heading("Archivio condomìni","Schede anagrafiche e dati antincendio");$("#content").innerHTML=`<div class="toolbar">${btn("+ Nuovo condominio","newc","primary")}</div><div class="list">${cs.map(c=>`<div class="item"><div style="display:flex;align-items:center;gap:12px">${c.fotoEdificio?`<img src="${imgSrc(c.fotoEdificio)}" alt="Edificio" style="width:74px;height:60px;object-fit:cover;border-radius:7px">`:""}<div><b>${esc(c.nome)}</b><small>${esc(c.indirizzo)} · ${esc(c.comune)} · Altezza ${esc(c.altezza||"n.d.")} m</small></div></div><div class="actions">${btn("Modifica","editc:"+c.id)}${btn("Elimina","delc:"+c.id,"danger")}${btn("Verbale di classificazione","newclass:"+c.id)+btn("Sopralluogo","newv:"+c.id,"primary")}</div></div>`).join("")||'<div class="panel">Nessun condominio. Creane uno per iniziare.</div>'}</div>`}
 else if(p==="newc"||p==="editc"){
  let c=p==="editc"?await one("condomini",id):{};if(!c)c={};let tech=deepCopy(c.tecnica||{});
