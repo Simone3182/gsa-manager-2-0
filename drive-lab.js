@@ -26,6 +26,24 @@
   const resolveFile = $('drive-lab-resolve-file');
   const syncResult = $('drive-lab-sync-result');
   const autoResult = $('drive-lab-auto-result');
+  // FASE 2D.1 — solo monitoraggio; nessuna password salvata o scrittura automatica.
+  const syncBadge = $('gsa-2d-sync-indicator');
+  const assistCheck = $('gsa-2d-check');
+  const assistReceive = $('gsa-2d-receive');
+  const assistResult = $('gsa-2d-result');
+  let canReceiveAssisted = false;
+  let autoCheckTimer = null;
+  function badge(state, label) {
+    if (!syncBadge) return;
+    syncBadge.dataset.state = state;
+    syncBadge.textContent = label;
+    syncBadge.title = 'FASE 2D.1 — ' + label + '. Nessuna sincronizzazione automatica dei dati.';
+  }
+  function resetAssisted() {
+    canReceiveAssisted = false;
+    if (assistReceive) assistReceive.disabled = true;
+  }
+
   const fieldButton = $('drive-lab-field-compare');
   const fieldResult = $('drive-lab-field-result');
   const conflictButton = $('drive-lab-conflict-analyze');
@@ -77,6 +95,9 @@
     publishBackupFile.disabled = !connected || busy;
     publishCheckButton.disabled = !connected || busy || !publishBackupFile.files?.length;
     publishRunButton.disabled = !connected || busy || !publishPreview;
+    assistCheck.disabled = !connected || busy;
+    assistReceive.disabled = !connected || busy || !canReceiveAssisted;
+
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
@@ -104,6 +125,10 @@
     publishResult.textContent = 'Drive scollegato. Nessuna pubblicazione eseguita.';
     syncResult.textContent = '';
     autoResult.textContent = 'Drive scollegato. Nessun controllo in corso.';
+    resetAssisted();
+    badge('disconnected','○ Drive non collegato');
+    assistResult.textContent = 'Drive scollegato. Nessun dato modificato.';
+
     setControls();
   }
   function assertReady() {
@@ -130,6 +155,7 @@
         callback: async response => {
           if (response.error || !response.access_token) { setStatus('Autorizzazione non riuscita: ' + (response.error || 'nessun token')); return; }
           accessToken = response.access_token;
+          badge('checking','◌ Controllo Drive…');
           setControls();
           try {
             const res = await api('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)');
@@ -147,7 +173,7 @@
     if (busy) return;
     busy = true; setControls();
     try { await fn(); } catch (err) { setStatus('Operazione non riuscita: ' + err.message); }
-    finally { busy = false; setControls(); }
+    finally { busy = false; setControls(); if (accessToken) scheduleAutoCheck(700); }
   }
   async function parseEncryptedFile(file) {
     if (!file) throw Error('Seleziona prima un file JSON cifrato.');
@@ -1288,6 +1314,8 @@ async function doSyncResolve(backupFile) {
   async function autoCheck() {
     if (autoChecking || busy || !accessToken || !isVaultUnlocked()) return;
     autoChecking = true;
+    resetAssisted();
+    badge('checking','◌ Controllo Drive…');
     autoResult.textContent = 'Controllo automatico in corso (sola lettura)…';
     try {
       const base = await metaGet(BASE_KEY);
@@ -1301,27 +1329,61 @@ async function doSyncResolve(backupFile) {
       const stamp = new Date().toLocaleTimeString('it-IT');
       const prefix = 'Controllo automatico ' + stamp + '\nBackup più recente: ' + latest.name + '\n';
       if (!base) {
+        badge('no-base','○ Allineamento iniziale richiesto');
         autoResult.textContent = prefix + 'PUNTO DI PARTENZA ASSENTE. Usa la procedura manuale protetta per allineare i dispositivi. Nessun dato modificato.';
       } else if (remoteChanged && localChanged) {
+        badge('conflict','⚠ Verificare possibili conflitti');
         autoResult.textContent = prefix + 'ATTENZIONE: modifiche sia su questo PC sia su Drive. Possibile conflitto. Non ricevere né pubblicare prima di un confronto protetto. Nessun dato modificato.';
       } else if (remoteChanged) {
-        autoResult.textContent = prefix + 'NOVITÀ SU DRIVE: è disponibile un backup successivo al punto di partenza. Nessuna modifica locale rilevata. Per ora usa «Ricevi da Drive» con backup di sicurezza.';
+        badge('receive','↓ Novità disponibili su Drive');
+        autoResult.textContent = prefix + 'NOVITÀ SU DRIVE: è disponibile un backup successivo al punto di partenza. Nessuna modifica locale rilevata. Usa «Ricevi da Drive» con backup di sicurezza.';
+        // Non autorizzare l'azione finché non e' stato confermato il backup locale.
+        canReceiveAssisted = await backupConfirmed();
       } else if (localChanged) {
+        badge('publish','↑ Modifiche locali da pubblicare');
         autoResult.textContent = prefix + 'MODIFICHE LOCALI: Drive non risulta cambiato. Per ora usa «Pubblica su Drive» con la procedura protetta.';
       } else {
+        badge('aligned','✓ Allineato con Drive');
         autoResult.textContent = prefix + 'NESSUNA MODIFICA rispetto all’ultimo allineamento. Nessun dato trasferito.';
       }
+      assistResult.textContent = autoResult.textContent +
+        (remoteChanged && !localChanged && !canReceiveAssisted ?
+          '\nPer abilitare la ricezione assistita: scarica e conferma prima un backup cifrato locale.' :
+          '\nFASE 2D.1: controllo automatico, trasferimento ancora manuale e protetto.');
     } catch (err) {
+      badge('error','! Controllo Drive non riuscito');
+      resetAssisted();
       autoResult.textContent = 'Controllo automatico non riuscito: ' + err.message + '\nNessun dato modificato.';
+      assistResult.textContent = autoResult.textContent;
     } finally {
       autoChecking = false;
+      setControls();
     }
   }
-  // Solo durante una sessione già autorizzata: mai riaprire automaticamente OAuth.
+  function scheduleAutoCheck(delay=900) {
+    if (autoCheckTimer) clearTimeout(autoCheckTimer);
+    autoCheckTimer = setTimeout(() => {
+      autoCheckTimer = null;
+      if (!document.hidden) void autoCheck();
+    }, delay);
+  }
+  // Solo durante una sessione gia' autorizzata: mai riaprire automaticamente OAuth.
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void autoCheck();
+    if (!document.hidden) scheduleAutoCheck(250);
   });
-  setInterval(() => { if (!document.hidden) void autoCheck(); }, 120000);
+  window.addEventListener('online', () => scheduleAutoCheck(700));
+  window.addEventListener('offline', () => { resetAssisted(); badge('offline','○ Offline: dati locali'); assistResult.textContent = 'Connessione assente. I dati restano sul dispositivo; nessuna sincronizzazione eseguita.'; setControls(); });
+  document.addEventListener('gsa-lab-local-change', () => scheduleAutoCheck(1100));
+  setInterval(() => { if (!document.hidden) scheduleAutoCheck(250); }, 120000);
+  assistCheck.addEventListener('click', () => scheduleAutoCheck(0));
+  assistReceive.addEventListener('click', () => {
+    if (!canReceiveAssisted || busy) return;
+    resetAssisted();
+    syncJob(async () => {
+      await doSyncPull();
+      assistResult.textContent = syncResult.textContent + '\nNessun trasferimento automatico eseguito.';
+    });
+  });
 
   function syncJob(fn) {
     return runJob(async () => {

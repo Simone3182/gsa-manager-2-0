@@ -128,8 +128,8 @@ function rawOne(n,id){return new Promise((ok,no)=>{let r=store(n).get(id);r.onsu
 async function all(n){if(!vaultReady)throw Error('Archivio bloccato');return Promise.all((await rawAll(n)).map(unwrapRecord))}
 async function one(n,id){if(!vaultReady)throw Error('Archivio bloccato');return unwrapRecord(await rawOne(n,id))}
 function writeRecord(n,op,value){return new Promise((ok,no)=>{let tx=db.transaction([n,'meta'],'readwrite');tx.objectStore(n)[op](value);tx.objectStore('meta').put({key:'lastChange',value:now()});tx.oncomplete=()=>ok();tx.onabort=()=>no(tx.error||Error('Scrittura annullata'));tx.onerror=()=>no(tx.error||Error('Errore archivio'))})}
-async function put(n,v){if(!vaultReady)throw Error('Archivio bloccato');const encrypted=await wrapRecord(n,v);if(!vaultReady)throw Error('Archivio bloccato');return writeRecord(n,'put',encrypted)}
-async function del(n,id){if(!vaultReady)throw Error('Archivio bloccato');return writeRecord(n,'delete',id)}
+async function put(n,v){if(!vaultReady)throw Error('Archivio bloccato');const encrypted=await wrapRecord(n,v);if(!vaultReady)throw Error('Archivio bloccato');await writeRecord(n,'put',encrypted);document.dispatchEvent(new Event('gsa-lab-local-change'));}
+async function del(n,id){if(!vaultReady)throw Error('Archivio bloccato');await writeRecord(n,'delete',id);document.dispatchEvent(new Event('gsa-lab-local-change'));}
 function metaGet(key){return new Promise((ok,no)=>{let r=store("meta").get(key);r.onsuccess=()=>ok(r.result?.value||"");r.onerror=()=>no(r.error)})}
 function metaSet(key,value){return new Promise((ok,no)=>{let tx=db.transaction("meta","readwrite");tx.objectStore("meta").put({key,value});tx.oncomplete=()=>ok();tx.onabort=()=>no(tx.error||Error("Impossibile aggiornare lo stato backup"))})}
 function humanDate(v){return v?new Date(v).toLocaleString("it-IT"):"Mai"}
