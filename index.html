@@ -56,7 +56,7 @@ body:has(nav button[data-page="backup"].active) #drive-lab-panel { display:block
 <body><div class="privacy-overlay" id="privacy-lock" style="display:none"><div class="privacy-card"><h1>🔐 GSA Manager</h1><p class="privacy-message">Archivio bloccato per proteggere i dati.</p><button class="primary" id="privacy-unlock">Sblocca archivio</button><p class="muted">La password non viene salvata nel browser.</p></div></div><div class="layout"><aside><div class="brand"><span>🛡</span><div><b>GSA Manager</b><small>Studio Geom. Simone Montanari</small></div></div>
 <nav><button class="active" data-page="dashboard">⌂ Dashboard</button><button data-page="condomini">▦ Condomini</button><button data-page="sopralluoghi">☷ Sopralluoghi</button><button data-page="archivio">▤ Verbali</button><button data-page="backup">⇄ Backup e trasferimento</button></nav><div aria-live="polite" class="backup-indicator" id="backup-indicator">Verifica stato backup…</div>
 <div class="asidefoot">LP0 · Bozze e documentazione informativa<br/><small>Ambiente di prova isolato · 2.0 LAB</small></div></aside>
-<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2D.1 + Dashboard riepilogativa · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill" id="gsa-2d-sync-indicator" data-state="disconnected" role="status" aria-live="polite" title="Stato sincronizzazione: solo controllo, nessun trasferimento automatico">○ Drive non collegato</span></header>
+<main><div style="background:#fff0ce;color:#684300;padding:12px 16px;border:1px solid #d5a027;border-radius:9px;margin-bottom:12px;font-weight:700">AMBIENTE DI PROVA — GSA MANAGER 2.0 LAB · Non inserire dati reali · FASE 2D.2 + Dashboard riepilogativa · Non usare dati reali</div><header><div><h1 id="heading">Dashboard</h1><p id="subheading">Gestione documentale GSA per edifici residenziali LP0</p></div><span class="pill" id="gsa-2d-sync-indicator" data-state="disconnected" role="status" aria-live="polite" title="Stato sincronizzazione: solo controllo, nessun trasferimento automatico">○ Drive non collegato</span></header>
 <section aria-label="Backup cifrati su Google Drive" id="drive-lab-panel" style="background:#eaf4ff;border:1px solid #9dc6ea;border-radius:9px;padding:13px 16px;margin-bottom:12px">
 <div style="font-weight:700;color:#12304a">Google Drive — backup cifrati (LAB)</div>
 <p id="drive-lab-status" role="status" style="margin:8px 0;color:#12304a">Non collegato. Nessun dato trasferito.</p>
@@ -163,11 +163,22 @@ body:has(nav button[data-page="backup"].active) #drive-lab-panel { display:block
 <pre id="gsa-2d-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">Collega Google Drive per iniziare. Nessun trasferimento automatico.</pre>
 <small>Solo LAB e dati fittizi. Non utilizzare due dispositivi contemporaneamente. La sincronizzazione senza intervento umano sarà progettata nelle fasi successive, con gestione esplicita della cifratura e dei conflitti.</small>
 </section></details>
+<details class="gsa-phase-fold" data-phase-key="2d2"><summary>FASE 2D.2 — Ricezione automatica protetta (LAB)</summary>
+<section aria-label="Ricezione automatica protetta in sessione" style="padding:12px;background:#f2f8fc">
+<p><b>Test sperimentale: ricezione automatica delle novità da Drive, SOLO dopo attivazione esplicita.</b> Il programma non pubblica modifiche sul cloud. Può aggiornare l'archivio locale soltanto quando è identico alla base precedente, esiste un backup locale confermato e non ci sono conflitti, cancellazioni o nuove modifiche locali.</p>
+<p>Attivazione: collega Drive, conserva un backup cifrato locale, poi inserisci <b>una sola volta la password dell'ultimo backup Drive</b>. Viene conservata <b>solo una chiave crittografica nella memoria della scheda</b>, non la password, e viene cancellata al blocco dell'archivio, alla disconnessione o alla chiusura. Se cambia il parametro crittografico del backup, il sistema si ferma e richiede una nuova attivazione.</p>
+<div class="toolbar" style="display:flex;flex-wrap:wrap;gap:8px">
+<button id="gsa-2d2-enable" type="button">1. Attiva ricezione automatica per questa sessione</button>
+<button id="gsa-2d2-disable" type="button" disabled>2. Disattiva ricezione automatica</button>
+</div>
+<pre id="gsa-2d2-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:10px 0 0">DISATTIVATA. Nessun trasferimento automatico.</pre>
+<small><b>Limitazioni:</b> funziona solo con scheda aperta, archivio sbloccato e Drive collegato; non opera durante la modifica di una scheda. Prima di importare salva una copia di recupero cifrata nell'archivio locale. In caso di dubbi o conflitti si blocca. <b>Non esegue upload automatici.</b> Solo dati fittizi LAB.</small>
+</section></details>
 <div aria-live="polite" id="drive-lab-files" style="margin-top:12px"></div>
 </div>
 <small style="display:block;margin-top:10px">Solo file cifrati, nessuna importazione automatica. I backup di prova saranno creati nella sezione Il mio Drive, non nella cartella GSA_MANAGER_2_0. Non inserire dati reali.</small>
 </section><div id="content"></div></main></div><div id="toast" role="status"></div>
-<script async="" defer="" src="https://accounts.google.com/gsi/client"></script><script src="./app.js?v=2.0-lab-14"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-14"></script><script id="gsa-dashboard-accordion-state">
+<script async="" defer="" src="https://accounts.google.com/gsi/client"></script><script src="./app.js?v=2.0-lab-15"></script><script src="./print-pages.js?v=2.0-lab-1"></script><script src="./drive-lab.js?v=2.0-lab-15"></script><script id="gsa-dashboard-accordion-state">
 /* Salva soltanto lo stato aperto/chiuso delle fasi; mai password o dati GSA. */
 (() => {
   'use strict';

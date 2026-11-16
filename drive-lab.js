@@ -33,6 +33,21 @@
   const assistResult = $('gsa-2d-result');
   let canReceiveAssisted = false;
   let autoCheckTimer = null;
+  // 2D.2: attivazione volontaria, solo RAM, nessuna password conservata.
+  let autoReceiveKey = null;
+  let autoReceiveSalt = null;
+  let autoReceiveRunning = false;
+  const autoReceiveEnable = $('gsa-2d2-enable');
+  const autoReceiveDisable = $('gsa-2d2-disable');
+  const autoReceiveResult = $('gsa-2d2-result');
+  function stopAutoReceive(message='DISATTIVATA. Nessun trasferimento automatico.') {
+    autoReceiveKey = null;
+    autoReceiveSalt = null;
+    if (autoReceiveEnable) autoReceiveEnable.disabled = !accessToken || busy;
+    if (autoReceiveDisable) autoReceiveDisable.disabled = true;
+    if (autoReceiveResult) autoReceiveResult.textContent = message;
+  }
+
   function badge(state, label) {
     if (!syncBadge) return;
     syncBadge.dataset.state = state;
@@ -97,11 +112,14 @@
     publishRunButton.disabled = !connected || busy || !publishPreview;
     assistCheck.disabled = !connected || busy;
     assistReceive.disabled = !connected || busy || !canReceiveAssisted;
+    autoReceiveEnable.disabled = !connected || busy || !!autoReceiveKey;
+    autoReceiveDisable.disabled = !connected || busy || !autoReceiveKey;
 
     fileInput.disabled = !connected || busy;
     for (const el of [syncInit,syncPull,syncPush,syncResolve,resolveFile]) el.disabled = !connected || busy;
   };
   function disconnectNow() {
+    stopAutoReceive('DISATTIVATA: Google Drive scollegato. Nessun dato modificato.');
     const oldToken = accessToken;
     accessToken = null;
     if (oldToken && window.google?.accounts?.oauth2?.revoke) {
@@ -1045,6 +1063,87 @@
     validateBackup(data);
     return data;
   }
+  // 2D.2: usa una CryptoKey in RAM. La password viene usata soltanto
+  // durante l'attivazione e NON e' salvata in localStorage, IndexedDB o Drive.
+  async function readRemoteWithSession(file, key, expectedSalt) {
+    const res = await api('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(file.id) + '?alt=media');
+    const raw = await res.text();
+    if (new Blob([raw]).size > MAX_BYTES) throw Error('Backup remoto troppo grande per il LAB (20 MB).');
+    let encrypted;
+    try { encrypted = JSON.parse(raw); } catch (_) { throw Error('JSON remoto non valido.'); }
+    if (encrypted?.format !== 'gsa-manager-encrypted-v1' || encrypted.algorithm !== 'AES-256-GCM' ||
+        encrypted.kdf !== 'PBKDF2-SHA256' || encrypted.iterations !== 310000 ||
+        typeof encrypted.salt !== 'string' || !encrypted.salt ||
+        typeof encrypted.iv !== 'string' || typeof encrypted.cipher !== 'string')
+      throw Error('Formato cifrato Drive non supportato.');
+    if (encrypted.salt !== expectedSalt) throw Error('Il backup Drive usa una nuova salt crittografica: riattiva la sessione con la sua password.');
+    let decrypted;
+    try { decrypted = await unseal(encrypted, key); }
+    catch (_) { throw Error('Impossibile decifrare il backup Drive con la chiave di questa sessione.'); }
+    validateBackup(decrypted);
+    return decrypted;
+  }
+
+  async function autoReceiveSafe(latest, base, localHash) {
+    if (!autoReceiveKey || !autoReceiveSalt || autoReceiveRunning || busy || document.hidden ||
+        (page !== 'dashboard' && page !== 'backup')) return false;
+    if (!base || base.hash !== localHash) throw Error('L’archivio locale non coincide con la base: ricezione automatica bloccata.');
+    if (await metaGet(PENDING_MERGE_KEY)) throw Error('Fusione in sospeso: ricezione automatica bloccata.');
+    if (!await backupConfirmed()) throw Error('Backup locale non confermato: scarica e conferma un backup prima di ricevere.');
+    autoReceiveRunning = true;
+    busy = true;
+    setControls();
+    try {
+      const local = await getLocal();
+      if (await fingerprint(local) !== localHash) throw Error('Archivio locale cambiato durante la verifica.');
+      const remote = await readRemoteWithSession(latest, autoReceiveKey, autoReceiveSalt);
+      if (!hasAllIds(remote, base.ids)) throw Error('Il backup Drive contiene eliminazioni rispetto alla base.');
+      const comparison = compareRecords(local, remote);
+      if (comparison.onlyLocal) throw Error('Alcuni record locali non sono presenti su Drive.');
+      for (const n of names) {
+        const m = new Map(local[n].map(x => [x.id, x]));
+        for (const item of remote[n]) {
+          const old = m.get(item.id);
+          if (old && !valueEqual(old,item) && item.updated <= old.updated)
+            throw Error('Data non coerente per ' + n + '/' + item.id + ': intervento manuale richiesto.');
+        }
+      }
+      const latestNow = await getLatest();
+      if (latestNow.id !== latest.id || (latest.md5Checksum && latestNow.md5Checksum !== latest.md5Checksum))
+        throw Error('Drive e’ cambiato durante il controllo.');
+      if (await fingerprint(await getLocal()) !== localHash || !isVaultUnlocked() ||
+          page !== 'dashboard' && page !== 'backup')
+        throw Error('Archivio o schermata modificati durante il controllo.');
+      // Copia di recupero CIFRATA con la chiave dell'archivio locale,
+      // prima della scrittura; mai dati GSA in chiaro nella memoria persistente.
+      const recovery = await seal(local);
+      await metaSet('gsa2d2Recovery_' + latest.id, {
+        created: new Date().toISOString(), baseId:base.id, localHash,
+        data: recovery
+      });
+      // Ricontrolla subito prima di importare: nessuna modifica silenziosa.
+      if (await fingerprint(await getLocal()) !== localHash) throw Error('Archivio modificato prima dell’importazione.');
+      const currentCloud = await getLatest();
+      if (currentCloud.id !== latest.id || (latest.md5Checksum && currentCloud.md5Checksum !== latest.md5Checksum))
+        throw Error('Drive modificato prima dell’importazione.');
+      const stats = await importAtomic(remote);
+      const after = await getLocal();
+      if (await fingerprint(after) !== await fingerprint(remote))
+        throw Error('Importazione non equivalente al backup remoto. Base NON aggiornata: interrompi i test e conserva le copie cifrate.');
+      await saveBase(currentCloud, after);
+      await show(page);
+      autoReceiveResult.textContent = 'RICEZIONE AUTOMATICA COMPLETATA (LAB)\n' + latest.name +
+        '\nNuovi: ' + stats.aggiunti + ' · Aggiornati: ' + stats.aggiornati +
+        ' · Invariati: ' + stats.ignorati +
+        '\nCopia di recupero locale cifrata conservata. Esporta un nuovo backup cifrato prima di ulteriori modifiche.';
+      return true;
+    } finally {
+      autoReceiveRunning = false;
+      busy = false;
+      setControls();
+    }
+  }
+
   async function getLocal() {
     const data = await collectBackup();
     validateBackup(data);
@@ -1332,6 +1431,7 @@ async function doSyncResolve(backupFile) {
         badge('no-base','○ Allineamento iniziale richiesto');
         autoResult.textContent = prefix + 'PUNTO DI PARTENZA ASSENTE. Usa la procedura manuale protetta per allineare i dispositivi. Nessun dato modificato.';
       } else if (remoteChanged && localChanged) {
+        if (autoReceiveKey) stopAutoReceive('DISATTIVATA: modifiche contemporanee sul PC e su Drive. Serve un confronto manuale.');
         badge('conflict','⚠ Verificare possibili conflitti');
         autoResult.textContent = prefix + 'ATTENZIONE: modifiche sia su questo PC sia su Drive. Possibile conflitto. Non ricevere né pubblicare prima di un confronto protetto. Nessun dato modificato.';
       } else if (remoteChanged) {
@@ -1339,7 +1439,22 @@ async function doSyncResolve(backupFile) {
         autoResult.textContent = prefix + 'NOVITÀ SU DRIVE: è disponibile un backup successivo al punto di partenza. Nessuna modifica locale rilevata. Usa «Ricevi da Drive» con backup di sicurezza.';
         // Non autorizzare l'azione finché non e' stato confermato il backup locale.
         canReceiveAssisted = await backupConfirmed();
+        if (autoReceiveKey && !document.hidden && (page === 'dashboard' || page === 'backup')) {
+          try {
+            if (await autoReceiveSafe(latest, base, localHash)) {
+              badge('aligned','✓ Allineato con Drive');
+              autoResult.textContent = prefix + 'RICEZIONE AUTOMATICA 2D.2 COMPLETATA. Archivio allineato; copia di recupero cifrata salvata.';
+              resetAssisted();
+            }
+          } catch (error) {
+            stopAutoReceive('RICEZIONE AUTOMATICA BLOCCATA: ' + error.message +
+              '\nNessun nuovo tentativo automatico. Verifica i dati e usa le procedure protette.');
+            badge('error','! Ricezione automatica bloccata');
+            autoResult.textContent = 'Ricezione 2D.2 bloccata: ' + error.message;
+          }
+        }
       } else if (localChanged) {
+        if (autoReceiveKey) stopAutoReceive('DISATTIVATA: sono presenti modifiche locali da pubblicare. Nessuna ricezione automatica.');
         badge('publish','↑ Modifiche locali da pubblicare');
         autoResult.textContent = prefix + 'MODIFICHE LOCALI: Drive non risulta cambiato. Per ora usa «Pubblica su Drive» con la procedura protetta.';
       } else {
@@ -1374,6 +1489,9 @@ async function doSyncResolve(backupFile) {
   window.addEventListener('online', () => scheduleAutoCheck(700));
   window.addEventListener('offline', () => { resetAssisted(); badge('offline','○ Offline: dati locali'); assistResult.textContent = 'Connessione assente. I dati restano sul dispositivo; nessuna sincronizzazione eseguita.'; setControls(); });
   document.addEventListener('gsa-lab-local-change', () => scheduleAutoCheck(1100));
+  document.addEventListener('click', e => {
+    if (e.target.closest('nav button[data-page]')) scheduleAutoCheck(1200);
+  });
   setInterval(() => { if (!document.hidden) scheduleAutoCheck(250); }, 120000);
   assistCheck.addEventListener('click', () => scheduleAutoCheck(0));
   assistReceive.addEventListener('click', () => {
@@ -1383,6 +1501,53 @@ async function doSyncResolve(backupFile) {
       await doSyncPull();
       assistResult.textContent = syncResult.textContent + '\nNessun trasferimento automatico eseguito.';
     });
+  });
+
+  autoReceiveEnable.addEventListener('click', () => runJob(async () => {
+    assertReady();
+    if (autoReceiveKey) return;
+    if (await metaGet(PENDING_MERGE_KEY)) throw Error('Fusione locale in sospeso. Non attivare la ricezione.');
+    const base = await metaGet(BASE_KEY);
+    if (!base) throw Error('Manca il punto di partenza: esegui prima l’allineamento manuale.');
+    const local = await getLocal();
+    if (await fingerprint(local) !== base.hash)
+      throw Error('Modifiche locali non pubblicate: ricezione automatica non attivabile.');
+    if (!await backupConfirmed())
+      throw Error('Prima scarica e conferma un backup cifrato locale aggiornato.');
+    const latest = await getLatest();
+    if (!confirm('FASE 2D.2 — TEST LAB\n\nAttivare per QUESTA SOLA SCHEDA la ricezione automatica dei nuovi backup Drive?\n' +
+      'Solo quando il PC e’ invariato, senza conflitti, con backup locale confermato.\n' +
+      'Potra’ modificare automaticamente i record LOCALI. Non carica file su Drive.\n' +
+      'Non usare dati reali. Conserva backup esterni.')) return;
+    // Scarica e verifica l'ultimo backup prima di autorizzare la sessione.
+    const res = await api('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(latest.id) + '?alt=media');
+    const raw = await res.text();
+    if (new Blob([raw]).size > MAX_BYTES) throw Error('Backup Drive oltre 20 MB.');
+    let encrypted;
+    try { encrypted = JSON.parse(raw); } catch (_) { throw Error('Backup Drive non valido.'); }
+    if (encrypted?.format !== 'gsa-manager-encrypted-v1' || encrypted.algorithm !== 'AES-256-GCM' ||
+        encrypted.kdf !== 'PBKDF2-SHA256' || encrypted.iterations !== 310000 ||
+        typeof encrypted.salt !== 'string' || !encrypted.salt)
+      throw Error('Formato cifrato non riconosciuto.');
+    const pass = prompt('Password dell’ultimo backup cifrato Drive (solo per questa sessione, non viene salvata):');
+    if (pass === null) return;
+    let key;
+    try {
+      key = await deriveKey(pass, encrypted.salt);
+      validateBackup(await unseal(encrypted, key));
+    } catch (_) { throw Error('Password errata o backup Drive non decifrabile.'); }
+    const latestNow = await getLatest();
+    if (latestNow.id !== latest.id || (latest.md5Checksum && latestNow.md5Checksum !== latest.md5Checksum))
+      throw Error('Drive cambiato durante l’attivazione.');
+    if (await fingerprint(await getLocal()) !== base.hash)
+      throw Error('PC cambiato durante l’attivazione.');
+    autoReceiveKey = key;
+    autoReceiveSalt = encrypted.salt;
+    autoReceiveResult.textContent = 'ATTIVA SOLO PER QUESTA SCHEDA.\nControlli automatici disponibili. Ricezione locale solo con base invariata, backup confermato e senza conflitti.\nNessuna password conservata. Nessun upload automatico.';
+  }));
+  autoReceiveDisable.addEventListener('click', () => {
+    stopAutoReceive('DISATTIVATA MANUALMENTE. Nessun trasferimento automatico.');
+    setControls();
   });
 
   function syncJob(fn) {
